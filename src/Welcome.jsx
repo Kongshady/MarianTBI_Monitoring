@@ -3,7 +3,7 @@
 function Welcome(){
     
     return(
-        <h1>Hello Welcome to Hell!!</h1>
+        <h1 className="font-bold underline">Hello Welcome!!</h1>
     );
 }
 
