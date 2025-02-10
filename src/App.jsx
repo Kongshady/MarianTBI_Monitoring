@@ -1,8 +1,8 @@
-import Loginform from './components/LoginForm.jsx'
+import SignUp from './components/LoginForm.jsx'
 
 function App() {
   return(
-    <Loginform />
+    <SignUp />
   );
 }
 
