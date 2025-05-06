@@ -5,13 +5,13 @@ import { collection, getDocs, query, where } from "firebase/firestore";
 
 function EmDashboard() {
     const [totalGroups, setTotalGroups] = useState(0); // State for total groups
-    const [groups, setGroups] = useState([]); // State for groups with their data
-    const [groupRequests, setGroupRequests] = useState({}); // State for storing the number of requests per group
-    const [groupProgress, setGroupProgress] = useState({}); // State for storing progress percentage per group
-    const [user, setUser] = useState(null); // State for the logged-in user
+    const [groups, setGroups] = useState([]); 
+    const [groupRequests, setGroupRequests] = useState({}); 
+    const [groupProgress, setGroupProgress] = useState({}); 
+    const [user, setUser] = useState(null); 
 
     useEffect(() => {
-        document.title = "Employee | Dashboard"; // Set the page title
+        document.title = "Employee | Dashboard"; 
 
         const fetchDashboardData = async () => {
             try {

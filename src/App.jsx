@@ -3,7 +3,7 @@ import AppRoutes from "./routes/routes.jsx";
 
 function App() {
   return(
-    <Router>
+    <Router basename="/MarianTBI_Montoring">
       <AppRoutes />
     </Router>
   );
