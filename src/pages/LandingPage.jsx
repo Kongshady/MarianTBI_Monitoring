@@ -11,7 +11,7 @@ function LandingPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    document.title = "MarianTBI | Home"; // Set the page title
+    document.title = "MarianTrack | Home"; // Updated page title
   }, []);
 
   const handleGoogleSignIn = async () => {
@@ -41,7 +41,8 @@ function LandingPage() {
     <div className="flex flex-row-reverse h-screen">
       {/* Left Section - Login Buttons */}
       <div className="flex flex-col w-1/2 gap-6 items-center justify-center p-10">
-        <img src={MarianLogo} alt="MarianTBI-logo" className="w-28 p-2" />
+        <img src={MarianLogo} alt="MarianTrack-logo" className="w-28 p-2" />
+        <p className="text-sm text-gray-600 font-semibold">Welcome to MarianTrack</p> {/* Added tagline */}
 
         {/* Login Buttons */}
         <div className="flex flex-col gap-3 w-full max-w-xs">
@@ -83,7 +84,7 @@ function LandingPage() {
           </div>
 
           <p className="text-sm leading-relaxed">
-          "Empowering startups through innovation, collaboration, and cutting-edge technology. Marian TBI provides mentorship, resources, and a thriving ecosystem for aspiring entrepreneurs to turn ideas into reality."
+            Welcome to <span className="font-bold text-primary-color">MarianTrack</span>, your gateway to empowering startups through innovation, collaboration, and cutting-edge technology. MarianTrack provides mentorship, resources, and a thriving ecosystem for aspiring entrepreneurs to turn ideas into reality.
           </p>
         </div>
       </div>

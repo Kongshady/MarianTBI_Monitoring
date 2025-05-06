@@ -4,7 +4,7 @@ import { doc, updateDoc, deleteDoc, collection, getDocs } from "firebase/firesto
 import { MdDelete, MdArchive } from "react-icons/md";
 import { useNavigate } from "react-router-dom"; // Import useNavigate
 
-function EditGroupModal({ isOpen, onClose, group, onSave }) {
+function EditGroupModal({ isOpen, onClose, group, onSave, groups }) {
   const [name, setName] = useState(group.name);
   const [description, setDescription] = useState(group.description);
   const [members, setMembers] = useState(group.members || []);
@@ -23,10 +23,11 @@ function EditGroupModal({ isOpen, onClose, group, onSave }) {
         const querySnapshot = await getDocs(usersQuery);
         const users = querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 
-        // Filter out users who are already in the group
+        // Filter out users who are already in the group or whose status is not "Approved"
         const filteredUsers = users.filter(
           (user) =>
-            !members.some((member) => member.id === user.id) && // Exclude users already in the group
+            !group.members.some((member) => member.id === user.id) && // Exclude users already in the group
+            user.status === "approved" && // Exclude users whose status is not "Approved"
             !["Portfolio Manager", "TBI Manager", "TBI Assistant"].includes(user.role) // Exclude specific roles
         );
 
@@ -37,7 +38,7 @@ function EditGroupModal({ isOpen, onClose, group, onSave }) {
     };
 
     fetchAvailableUsers();
-  }, [members]); // Re-run when members change
+  }, [group.members]); // Re-run when members change
 
   const handleSave = async () => {
     // Update the group in Firestore
@@ -66,6 +67,18 @@ function EditGroupModal({ isOpen, onClose, group, onSave }) {
   const handleAddMember = () => {
     if (selectedUser && selectedRole) {
       const userToAdd = availableUsers.find((user) => user.id === selectedUser);
+
+      // Check if the user is already a Project Manager in another startup
+      const isAlreadyProjectManager = groups.some((group) =>
+        group.members.some(
+          (member) => member.id === userToAdd.id && member.groupRole === "Project Manager"
+        )
+      );
+
+      if (isAlreadyProjectManager && selectedRole === "Project Manager") {
+        console.error(`${userToAdd.name} is already a Project Manager in another startup.`);
+        return;
+      }
 
       // Add the user with the selected groupRole to the members list
       const updatedMembers = [
@@ -178,9 +191,23 @@ function EditGroupModal({ isOpen, onClose, group, onSave }) {
                 value={selectedRole}
                 onChange={(e) => setSelectedRole(e.target.value)}
                 className="flex-1 border border-gray-300 rounded-sm p-2 text-sm"
+                disabled={!selectedUser} // Disable if no user is selected
               >
                 <option value="">Select Role</option>
-                <option value="Project Manager">Project Manager</option>
+                <option
+                    value="Project Manager"
+                    disabled={availableUsers.some(
+                        (user) =>
+                            user.id === selectedUser &&
+                            groups.some((group) =>
+                                group.members.some(
+                                    (member) => member.id === user.id && member.groupRole === "Project Manager"
+                                )
+                            )
+                    )}
+                >
+                    Project Manager
+                </option>
                 <option value="System Analyst">System Analyst</option>
                 <option value="Developer">Developer</option>
               </select>

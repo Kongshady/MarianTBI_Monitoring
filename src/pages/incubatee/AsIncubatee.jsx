@@ -17,7 +17,7 @@ function LoginAsIncubatee() {
     const restrictedRoles = ["TBI Manager", "TBI Assistant", "Portfolio Manager"];
 
     useEffect(() => {
-        document.title = "Incubatee Login"; // Set the page title
+        document.title = "MarianTrack | Incubatee Login"; // Updated page title
     }, []);
 
     const handleLogin = async (e) => {
@@ -87,7 +87,8 @@ function LoginAsIncubatee() {
                     <FiArrowLeft size={24} />
                 </button>
 
-                <img src={MarianLogo} alt="MarianTBI-logo" className="w-28 p-2" />
+                <img src={MarianLogo} alt="MarianTrack-logo" className="w-28 p-2" />
+                <p className="text-sm text-gray-600 font-semibold">Welcome to MarianTrack</p> {/* Added tagline */}
 
                 {/* Login Form */}
                 <form onSubmit={handleLogin} className="flex flex-col gap-3 w-full max-w-xs">
@@ -152,7 +153,7 @@ function LoginAsIncubatee() {
                     </div>
 
                     <p className="text-sm leading-relaxed">
-                        "Empowering startups through innovation, collaboration, and cutting-edge technology. Marian TBI provides mentorship, resources, and a thriving ecosystem for aspiring entrepreneurs to turn ideas into reality."
+                        Welcome to <span className="font-bold text-primary-color">MarianTrack</span>, your gateway to empowering startups through innovation, collaboration, and cutting-edge technology. MarianTrack provides mentorship, resources, and a thriving ecosystem for aspiring entrepreneurs to turn ideas into reality.
                     </p>
                 </div>
             </div>

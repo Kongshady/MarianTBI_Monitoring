@@ -16,7 +16,7 @@ function EmChat() {
     const dropdownRef = useRef(null);
 
     useEffect(() => {
-        document.title = "Employee | Chats"; // Set the page title
+        document.title = "Employee | Chats";
 
         const fetchUsersAndGroups = async () => {
             const user = auth.currentUser;

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { db } from "../../config/marian-config.js";
-import { doc, query, where, onSnapshot, collection, updateDoc, getDoc } from "firebase/firestore";
+import { doc, query, where, onSnapshot, collection, updateDoc, getDoc, getDocs } from "firebase/firestore";
 import AdminSidebar from "../sidebar/AdminSidebar.jsx";
 import { MdEdit } from "react-icons/md";
 import EditGroupModal from "../modals/EditGroupModal.jsx";
@@ -15,6 +15,7 @@ function AdViewGroups() {
   const [isWorkplanTableOpen, setIsWorkplanTableOpen] = useState(false);
   const [portfolioManager, setPortfolioManager] = useState(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [groups, setGroups] = useState([]); // State for all groups
 
   useEffect(() => {
     const fetchGroup = () => {
@@ -61,6 +62,24 @@ function AdViewGroups() {
       unsubscribeGroup();
     };
   }, [groupId]);
+
+  useEffect(() => {
+    const fetchGroups = async () => {
+      try {
+        const groupsQuery = collection(db, "groups");
+        const querySnapshot = await getDocs(groupsQuery);
+        const fetchedGroups = querySnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        setGroups(fetchedGroups); // Set the groups data
+      } catch (error) {
+        console.error("Error fetching groups:", error);
+      }
+    };
+
+    fetchGroups();
+  }, []);
 
   useEffect(() => {
     const fetchRequests = () => {
@@ -413,6 +432,7 @@ function AdViewGroups() {
         onClose={() => setIsEditModalOpen(false)}
         group={group}
         onSave={handleSaveGroup}
+        groups={groups} // Pass groups as a prop
       />
     </div>
   );
