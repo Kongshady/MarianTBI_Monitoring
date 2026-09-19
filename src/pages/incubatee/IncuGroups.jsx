@@ -1,95 +1,99 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { db, auth } from "../../config/marian-config.js";
-import { collection, getDocs } from "firebase/firestore";
-import IncubateeSidebar from "../../components/sidebar/IncubateeSidebar.jsx";
+import { collection, doc, getDoc, getDocs } from "firebase/firestore";
+import AppShell from "../../components/layout/AppShell.jsx";
+import PageHeader from "../../components/ui/PageHeader.jsx";
+import StatusBadge from "../../components/ui/StatusBadge.jsx";
+import Avatar from "../../components/ui/Avatar.jsx";
+import { EmptyState, PageSkeleton } from "../../components/ui/states.jsx";
 
 function IncuGroups() {
   const [groups, setGroups] = useState([]);
-  const navigate = useNavigate();
+  const [role, setRole] = useState("");
+  const [userName, setUserName] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    document.title = "Incubatee | My Group"; // Set the page title
+    document.title = "My Startups";
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     const fetchUserGroups = async () => {
       const user = auth.currentUser;
-      if (user) {
-        try {
-          const querySnapshot = await getDocs(collection(db, "groups"));
-          const filteredGroups = querySnapshot.docs
-            .map((doc) => ({ id: doc.id, ...doc.data() }))
-            .filter((group) =>
-              group.members.some((member) => member.id === user.uid) // Check if the user's ID exists in the members array
-            );
-
-          setGroups(filteredGroups); // Set all filtered groups in the state
-        } catch (error) {
-          console.error("Error fetching user groups:", error);
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+      try {
+        const userDoc = await getDoc(doc(db, "users", user.uid));
+        if (userDoc.exists() && !cancelled) {
+          setRole(userDoc.data().role || "");
+          setUserName(`${userDoc.data().name || ""} ${userDoc.data().lastname || ""}`.trim());
         }
+        const querySnapshot = await getDocs(collection(db, "groups"));
+        if (cancelled) return;
+        setGroups(
+          querySnapshot.docs
+            .map((d) => ({ id: d.id, ...d.data() }))
+            .filter((group) => (group.members || []).some((member) => member.id === user.uid))
+            .sort((a, b) => {
+              if (a.archived && !b.archived) return 1;
+              if (!a.archived && b.archived) return -1;
+              return (a.name || "").localeCompare(b.name || "");
+            })
+        );
+      } catch (error) {
+        console.error("Error fetching user groups:", error);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchUserGroups();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
-    <div className="flex">
-      <IncubateeSidebar />
-      <div className="flex flex-col items-start h-screen w-full p-10">
-        <h1 className="text-4xl font-bold mb-5">My StartUps</h1>
-        <div className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {groups.length > 0 ? (
-            [...groups]
-              .sort((a, b) => {
-                // Sort archived groups to the bottom
-                if (a.archived && !b.archived) return 1;
-                if (!a.archived && b.archived) return -1;
+    <AppShell role={role} userName={userName}>
+      <PageHeader
+        title="My startups"
+        description="Startup teams you belong to. Open one for its workplan, milestones, and mentorship."
+      />
 
-                // Sort alphabetically by name for non-archived groups
-                return a.name.localeCompare(b.name);
-              })
-              .map((group) => (
-                <div
-                  key={group.id}
-                  className={`p-4 rounded-sm shadow-sm border hover:shadow-lg transition-shadow duration-300 relative ${
-                    group.archived ? "bg-gray-200 opacity-70" : "bg-white"
-                  }`}
-                >
-                  <h2 className="text-md font-bold">{group.name}</h2>
-                  <p className="text-xs">{group.description}</p>
-                  {group.imageUrl && (
-                    <img
-                      src={group.imageUrl}
-                      alt={group.name}
-                      className="mt-2 w-full h-40 object-cover rounded-lg"
-                    />
-                  )}
-                  <div className="mt-2">
-                    <h3 className="font-bold text-sm">Members:</h3>
-                    <ul className="text-sm">
-                      {group.members.map((member, index) => (
-                        <li key={index}>
-                          {member.name} {member.lastname}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <button
-                    onClick={() => navigate(`/incubatee/view-group/${group.id}`)}
-                    className="mt-4 bg-secondary-color text-xs text-white px-4 py-2 rounded-sm hover:bg-opacity-80 transition hover:bg-white hover:text-secondary-color border border-secondary-color"
-                  >
-                    View Group
-                  </button>
-                </div>
-              ))
-          ) : (
-            <p className="text-gray-500">You are not assigned to any group.</p>
-          )}
-        </div>
-      </div>
-    </div>
+      {loading ? (
+        <PageSkeleton rows={4} />
+      ) : groups.length === 0 ? (
+        <EmptyState
+          title="No startup yet"
+          description="Once staff place you in a startup team, it will appear here."
+        />
+      ) : (
+        <ul className="bg-white border border-line rounded divide-y divide-line">
+          {groups.map((group) => (
+            <li key={group.id} className={group.archived ? "opacity-60" : ""}>
+              <Link
+                to={`/incubatee/view-group/${group.id}`}
+                className="flex items-center gap-4 p-4 hover:bg-slate-50 transition"
+              >
+                <Avatar name={group.name} size="lg" />
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[15px] font-medium text-slate-900 truncate">{group.name}</span>
+                  <span className="block text-[13px] text-muted truncate">
+                    {(group.members || []).length} members
+                    {group.archived ? " · Archived" : ""}
+                  </span>
+                </span>
+                <StatusBadge status={group.archived ? "Archived" : group.incubateeStatus || "Active"} />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </AppShell>
   );
 }
 

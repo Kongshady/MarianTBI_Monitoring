@@ -1,24 +1,40 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
-import MarianLogo from "../assets/images/MarianLogoWtext.png";
-import CustomButton from "../components/CustomButton";
+import { FiClock } from "react-icons/fi";
+import AuthLayout from "../components/auth/AuthLayout.jsx";
 
+// Post-registration state: every new account (applicant or access request)
+// waits for administrator approval before it can sign in.
 function WaitingForApproval() {
-    return (
+  useEffect(() => {
+    document.title = "MarianTrack | Pending Approval";
+  }, []);
+
+  return (
+    <AuthLayout
+      eyebrow="Account created"
+      title="Approval in progress"
+      description="Your request is pending. A TBI administrator will review it shortly."
+    >
+      <div role="status" className="flex gap-3 p-4 rounded border border-amber-200 bg-amber-50">
+        <FiClock className="shrink-0 mt-0.5 text-amber-700 text-lg" aria-hidden="true" />
         <div>
-            <div className="flex items-center justify-center h-screen">
-                <div className="flex flex-col gap-3 p-10 w-1/3 bg-white rounded-md shadow-2xl">
-                    <img src={MarianLogo} alt="MarianTBI-logo" className="w-28 p-2 mx-auto" />
-                    <h1 className="text-2xl font-bold text-center">Approval in Progress, Please Wait</h1>
-                    <p className="text-center">Your Request is pending. You may reach out to the TBI Manager for approval.</p>
-                    <div className="w-full flex justify-center items-center">
-                        <Link to={"/"}>
-                            <CustomButton text={'Got it'} className={'bg-primary-color text-white hover:bg-white hover:text-primary-color transition-all'} />
-                        </Link>
-                    </div>
-                </div>
-            </div>
+          <p className="text-sm font-medium text-amber-900">What happens next?</p>
+          <ul className="text-sm text-amber-900 mt-1.5 flex flex-col gap-1 list-disc pl-5">
+            <li>An administrator reviews your request.</li>
+            <li>Once approved, sign in with your email and password.</li>
+            <li>Need it urgently? Reach out to the TBI office directly.</li>
+          </ul>
         </div>
-    );
+      </div>
+      <Link
+        to="/"
+        className="block text-center mt-5 px-4 py-3 bg-primary-color text-white rounded text-[15px] font-semibold hover:bg-primary-deep transition"
+      >
+        Got it
+      </Link>
+    </AuthLayout>
+  );
 }
 
-export default WaitingForApproval
+export default WaitingForApproval;

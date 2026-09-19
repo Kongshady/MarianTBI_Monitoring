@@ -1,0 +1,48 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Group/startup images: any signed-in approved-area reader, staff writers.
+    // Storage rules enforce auth + image type + 5MB cap. The client uses a
+    // timestamped, sanitized filename to avoid collisions (see AdGroups).
+    match /groupImages/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if false;
+    }
+
+    // Document attachments: signed-in reads (URLs are unguessable; listing
+    // is gated by Firestore document rules), owner-or-staff writes, 10MB cap
+    // for common document/image types. Deletes go through the app, which
+    // removes the file alongside its metadata doc.
+    match /documents/{scopeId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('(application|text)/.*|image/.*');
+      allow delete: if isSignedIn();
+    }
+
+    // Profile photos: any signed-in reader (avatars appear in rosters and
+    // chat), owner-only writes under their own UID path, 2MB image cap.
+    // (Deletes carry no request.resource, so they are ruled separately.)
+    match /profileImages/{userId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.size < 2 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Deny everything else by default.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

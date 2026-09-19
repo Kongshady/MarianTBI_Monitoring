@@ -1,10 +1,23 @@
-import React, { useState } from "react";
+import { useMemo, useState } from "react";
 import { FaEdit, FaTrash } from "react-icons/fa";
 import { db } from "../../config/marian-config"; // Import Firestore configuration
 import { addDoc, collection, serverTimestamp } from "firebase/firestore"; // Import Firestore methods
+import StatusBadge from "../ui/StatusBadge.jsx";
+import SectionEmptyState from "../groups/SectionEmptyState.jsx";
+import {
+  comparePriority,
+  formatDateSafe,
+  normalizePriority,
+  normalizeTaskStatus,
+  toDateSafe,
+  TASK_STATUS,
+} from "../../lib/domain.js";
+import { canSubmitAsTeamMember, isProjectManager } from "../../lib/permissions.js";
 
 const WorkplanTable = ({ workplan, groupMembers, handleAddTask, handleEditTask, handleDeleteTask, handleUpdateStatus, groupRole }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [taskData, setTaskData] = useState({
     taskName: "",
     assignedTo: "",
@@ -55,10 +68,10 @@ const WorkplanTable = ({ workplan, groupMembers, handleAddTask, handleEditTask, 
       );
 
       if (assignedMember) {
-        // Create a notification for the assigned member
+        // Create a notification for the assigned member (plain text; rendered safely)
         await addDoc(collection(db, "notifications"), {
           userId: assignedMember.id, // ID of the assigned member
-          message: `<b style="color:red">Task Update:</b> Your task <b>${task.taskName}</b> has been marked as <b style="color:green">Completed</b> by your Project Manager.`,
+          message: `Task Update: Your task ${task.taskName} has been marked as Completed by your Project Manager.`,
           createdAt: serverTimestamp(), // Use Firestore's serverTimestamp
           read: false,
           type: "task-status",
@@ -87,11 +100,34 @@ const WorkplanTable = ({ workplan, groupMembers, handleAddTask, handleEditTask, 
     }
   };
 
+  const canWrite = canSubmitAsTeamMember(groupRole);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    // Sort tasks by priority level (High > Medium > Low) and then by status (Completed at the bottom)
+    return [...(workplan || [])]
+      .filter((task) => {
+        if (statusFilter !== "all" && normalizeTaskStatus(task.status) !== statusFilter) return false;
+        if (!q) return true;
+        return [task.taskName, task.assignedTo].filter(Boolean).join(" ").toLowerCase().includes(q);
+      })
+      .sort((a, b) => {
+        const aDone = normalizeTaskStatus(a.status) === TASK_STATUS.COMPLETED;
+        const bDone = normalizeTaskStatus(b.status) === TASK_STATUS.COMPLETED;
+        if (aDone && !bDone) return 1;
+        if (!aDone && bDone) return -1;
+        if (comparePriority(a.priorityLevel, b.priorityLevel) !== 0) {
+          return comparePriority(a.priorityLevel, b.priorityLevel);
+        }
+        return (toDateSafe(a.startDate)?.getTime() || 0) - (toDateSafe(b.startDate)?.getTime() || 0);
+      });
+  }, [workplan, search, statusFilter]);
+
   return (
-    <div className="mt-2 w-full">
-      <div className="flex justify-between items-center mb-2">
-        <h3 className="font-bold text-lg">Workplan</h3>
-        {groupRole !== "System Analyst" && groupRole !== "Developer" && (
+    <div className="w-full">
+      <div className="flex flex-wrap items-end gap-2 mb-3">
+        <h2 className="text-base font-semibold mr-auto">Workplan</h2>
+        {canWrite && (
           <button
             onClick={() => {
               setTaskData({
@@ -104,115 +140,135 @@ const WorkplanTable = ({ workplan, groupMembers, handleAddTask, handleEditTask, 
               setIsEditing(false);
               setIsModalOpen(true);
             }}
-            className="bg-secondary-color text-white px-4 py-2 text-xs rounded-sm hover:bg-opacity-80 transition flex items-center gap-2"
+            className="px-4 py-2 bg-accent text-white text-xs font-medium rounded hover:bg-opacity-80 transition"
           >
-            + Add Task
+            + Add task
           </button>
         )}
       </div>
-      <table className="min-w-full bg-white text-xs">
-        <thead className="sticky top-0 bg-secondary-color text-white">
+      <div className="flex flex-wrap items-end gap-2 mb-3">
+        <div className="flex-1 min-w-[150px] sm:flex-none">
+          <label htmlFor="workplanSearch" className="tbi-label">Search</label>
+          <input
+            id="workplanSearch"
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Task or assignee"
+            className="tbi-input sm:max-w-64"
+          />
+        </div>
+        <div>
+          <label htmlFor="workplanStatus" className="tbi-label">Status</label>
+          <select
+            id="workplanStatus"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="tbi-input sm:max-w-44"
+          >
+            <option value="all">All</option>
+            <option value="Pending">Pending</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Completed">Completed</option>
+          </select>
+        </div>
+      </div>
+      <div className="bg-white border border-line rounded overflow-x-auto">
+      <table className="tbi-table min-w-[760px]">
+        <thead>
           <tr>
-            <th className="py-2 px-4 font-medium text-left">Task Name</th>
-            <th className="py-2 px-4 font-medium text-right">Assigned Member</th>
-            <th className="py-2 px-4 font-medium">Start Date</th>
-            <th className="py-2 px-4 font-medium">End Date</th>
-            <th className="py-2 px-4 font-medium">Priority Level</th>
-            <th className="py-2 px-4 font-medium">Status</th>
-            <th className="py-2 px-4 font-medium">Actions</th>
+            <th scope="col">Task</th>
+            <th scope="col">Assigned to</th>
+            <th scope="col">Start</th>
+            <th scope="col">Due</th>
+            <th scope="col">Priority</th>
+            <th scope="col">Status</th>
+            <th scope="col"><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody>
-          {workplan.length > 0 ? (
-            // Sort tasks by priority level (High > Medium > Low) and then by status (Completed at the bottom)
-            [...workplan]
-              .sort((a, b) => {
-                const priorityOrder = { High: 1, Medium: 2, Low: 3 };
-                if (a.status === "Completed" && b.status !== "Completed") return 1;
-                if (a.status !== "Completed" && b.status === "Completed") return -1;
-                if (priorityOrder[a.priorityLevel] !== priorityOrder[b.priorityLevel]) {
-                  return priorityOrder[a.priorityLevel] - priorityOrder[b.priorityLevel];
-                }
-                return new Date(a.startDate) - new Date(b.startDate);
-              })
-              .map((task, index) => (
-                <tr
-                  key={task.id}
-                  className={`${task.status === "Completed" ? "bg-gray-200 opacity-70" : index % 2 === 0 ? "bg-white" : "bg-gray-100"
-                    }`}
-                >
-                  <td className="p-1 text-left">{task.taskName}</td>
-                  <td className="p-1 text-right">{task.assignedTo}</td>
-                  <td className="p-1">
-                    {new Date(task.startDate).toLocaleDateString("en-US", {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })}
+          {filtered.map((task) => (
+              <tr key={task.id}>
+                  <td className="font-medium text-slate-900">{task.taskName}</td>
+                  <td>{task.assignedTo}</td>
+                  <td>
+                    {formatDateSafe(task.startDate)}
                   </td>
-                  <td className="p-1">
-                    {new Date(task.endDate).toLocaleDateString("en-US", {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })}
+                  <td>
+                    {formatDateSafe(task.endDate)}
                   </td>
-                  <td
-                    className={`p-2 font-bold ${task.priorityLevel === "High"
-                        ? "text-red-500"
-                        : task.priorityLevel === "Medium"
-                          ? "text-yellow-500"
-                          : "text-green-500"
-                      }`}
-                  >
-                    {task.priorityLevel}
+                  <td>
+                    <StatusBadge status={normalizePriority(task.priorityLevel)} />
                   </td>
-                  <td className="p-1">
+                  <td>
                     {/* Allow only Project Manager or Assigned Member to edit the status */}
-                    {groupRole === "Project Manager" || task.assignedTo === groupMembers.find((member) => member.name === task.assignedTo)?.name ? (
+                    {isProjectManager(groupRole) || groupMembers.some((member) => `${member.name} ${member.lastname}` === task.assignedTo) ? (
                       <select
                         value={task.status}
                         onChange={(e) => handleStatusChange(task.id, e.target.value)}
-                        className="w-full p-1 border text-xs text-center"
+                        className="tbi-input !w-auto text-[13px]"
+                        aria-label={`Status for ${task.taskName}`}
                       >
                         <option value="Pending">Pending</option>
                         <option value="Completed">Completed</option>
                       </select>
                     ) : (
-                      <span className="text-xs">{task.status}</span>
+                      <StatusBadge status={task.status} />
                     )}
                   </td>
-                  <td className="p-1 flex justify-center gap-2">
+                  <td>
                     {/* Restrict actions for System Analyst and Developer */}
-                    {groupRole !== "System Analyst" && groupRole !== "Developer" && (
-                      <>
+                    {canWrite && (
+                      <span className="flex justify-end gap-1.5">
                         <button
                           onClick={() => openEditModal(task)}
-                          className="bg-secondary-color text-white px-2 py-1 rounded-sm hover:bg-opacity-80 transition"
+                          className="px-2.5 py-1.5 bg-accent text-white rounded text-xs hover:bg-opacity-80 transition disabled:opacity-60"
                           disabled={task.status === "Completed"} // Disable edit for completed tasks
+                          aria-label={`Edit ${task.taskName}`}
                         >
-                          <FaEdit />
+                          <FaEdit aria-hidden="true" />
                         </button>
                         <button
                           onClick={() => handleDeleteTask(task.id)}
-                          className="bg-red-500 text-white px-2 py-1 rounded-sm hover:bg-opacity-80 transition"
+                          className="px-2.5 py-1.5 bg-red-500 text-white rounded text-xs hover:bg-red-600 transition"
+                          aria-label={`Delete ${task.taskName}`}
                         >
-                          <FaTrash />
+                          <FaTrash aria-hidden="true" />
                         </button>
-                      </>
+                      </span>
                     )}
                   </td>
                 </tr>
-              ))
-          ) : (
-            <tr>
-              <td className="p-1 text-center" colSpan="7">
-                No tasks found.
-              </td>
-            </tr>
-          )}
+              ))}
         </tbody>
       </table>
+      {filtered.length === 0 && (
+        <SectionEmptyState
+          title={(workplan || []).length === 0 ? "No tasks yet" : "No tasks match"}
+          message={
+            (workplan || []).length === 0
+              ? canWrite
+                ? "Break the work into tasks with owners and due dates to get the startup moving."
+                : "No tasks have been planned for this startup yet."
+              : "Try a different search term or status filter."
+          }
+          action={
+            (workplan || []).length === 0 && canWrite ? (
+              <button
+                onClick={() => {
+                  setTaskData({ taskName: "", assignedTo: "", startDate: "", endDate: "", priorityLevel: "Low" });
+                  setIsEditing(false);
+                  setIsModalOpen(true);
+                }}
+                className="px-4 py-2 bg-accent text-white text-xs font-medium rounded hover:bg-opacity-80 transition"
+              >
+                + Add task
+              </button>
+            ) : null
+          }
+        />
+      )}
+      </div>
 
       {isModalOpen && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
@@ -295,7 +351,7 @@ const WorkplanTable = ({ workplan, groupMembers, handleAddTask, handleEditTask, 
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-secondary-color text-white text-sm rounded-sm hover:bg-opacity-80 transition"
+                  className="px-4 py-2 bg-accent text-white text-sm rounded-sm hover:bg-opacity-80 transition"
                 >
                   {isEditing ? "Update Task" : "Add Task"}
                 </button>

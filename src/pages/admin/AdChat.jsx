@@ -1,96 +1,108 @@
 import { useState, useEffect, useRef } from "react";
-import { collection, addDoc, query, orderBy, onSnapshot, doc, updateDoc, deleteDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, updateDoc, deleteDoc } from "firebase/firestore";
 import { db, auth } from "../../config/marian-config.js";
-import AdminSidebar from "../../components/sidebar/AdminSidebar.jsx";
+import {
+  subscribeToMyMessages,
+  getConversation,
+  getUnreadCounts,
+  sendChatMessage,
+  markConversationSeen,
+} from "../../lib/chat.js";
+import { canSendTo, getChatContacts, getPastContacts } from "../../lib/messaging.js";
+import { writeAuditEntry } from "../../lib/audit.js";
+import { toDateSafe } from "../../lib/domain.js";
+import AppShell from "../../components/layout/AppShell.jsx";
+import PageHeader from "../../components/ui/PageHeader.jsx";
+import Avatar from "../../components/ui/Avatar.jsx";
+import { EmptyState } from "../../components/ui/states.jsx";
 import { FaEllipsisV } from "react-icons/fa";
 
 function AdChat() {
     const [users, setUsers] = useState([]);
+    const [allUsers, setAllUsers] = useState([]);
+    const [directory, setDirectory] = useState({ groups: [], applications: [], assignments: [] });
+    const [role, setRole] = useState("");
+    const [userName, setUserName] = useState("");
     const [selectedUser, setSelectedUser] = useState(null);
-    const [messages, setMessages] = useState([]);
+    const [allMessages, setAllMessages] = useState([]);
     const [newMessage, setNewMessage] = useState("");
     const [editingMessage, setEditingMessage] = useState(null);
     const [showOptions, setShowOptions] = useState(null);
-    const [unreadCounts, setUnreadCounts] = useState({});
-    const [lastChatTimestamps, setLastChatTimestamps] = useState({});
     const dropdownRef = useRef(null);
 
+    const myUid = auth.currentUser?.uid;
+    const messages = selectedUser && myUid ? getConversation(allMessages, myUid, selectedUser.id) : [];
+    const unreadCounts = myUid ? getUnreadCounts(allMessages, myUid) : {};
+
     useEffect(() => {
-        document.title = "Admin | Chats"; // Set the page title
+        document.title = "Messages"; // Set the page title
 
-        const unsubscribeUsers = onSnapshot(collection(db, "users"), (usersSnapshot) => {
-            const usersList = usersSnapshot.docs.map((doc) => ({
-                id: doc.id,
-                ...doc.data(),
-            }));
+        // Relationship directory: authorized contacts per the messaging
+        // matrix — staff see applicants, teams, mentors and staff in scope.
+        const loadDirectory = async () => {
+            try {
+                const current = auth.currentUser;
+                if (!current) return;
+                const userDoc = await getDoc(doc(db, "users", current.uid));
+                if (!userDoc.exists()) return;
+                const me = { id: userDoc.id, ...userDoc.data() };
+                setRole(me.role || "");
+                setUserName(`${me.name || ""} ${me.lastname || ""}`.trim());
 
-            const unsubscribeGroups = onSnapshot(collection(db, "groups"), (groupsSnapshot) => {
-                const groupsList = groupsSnapshot.docs.map((doc) => ({
-                    id: doc.id,
-                    ...doc.data(),
-                }));
+                const [usersSnap, groupsSnap, appsSnap, assignSnap] = await Promise.all([
+                    getDocs(collection(db, "users")),
+                    getDocs(collection(db, "groups")),
+                    getDocs(collection(db, "applications")),
+                    getDocs(collection(db, "mentorAssignments")),
+                ]);
+                const usersList = usersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+                const groupsList = groupsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+                const appsList = appsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+                const assignList = assignSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-                const filteredUsers = usersList
-                    .filter(
-                        (user) =>
-                            user.id !== auth.currentUser.uid &&
-                            ["Portfolio Manager", "Project Manager", "TBI Assistant"].includes(user.role)
-                    )
-                    .map((user) => {
-                        const userGroup = groupsList.find(
-                            (group) =>
-                                group.members.some((member) => member.email === user.email) ||
-                                group.portfolioManager.email === user.email
-                        );
-                        return { ...user, groupName: userGroup ? userGroup.name : "No Group" };
-                    });
+                setAllUsers(usersList);
+                setDirectory({ groups: groupsList, applications: appsList, assignments: assignList });
+                setUsers(getChatContacts({ me, users: usersList, groups: groupsList, applications: appsList, assignments: assignList }));
+            } catch (error) {
+                console.error("Error loading chat directory:", error);
+            }
+        };
 
-                setUsers(filteredUsers);
-            });
-
-            return () => unsubscribeGroups();
-        });
-
-        return () => unsubscribeUsers();
+        loadDirectory();
     }, []);
 
+    // Past contacts: preserved history from ended relationships (read-only).
     useEffect(() => {
-        if (selectedUser) {
-            const q = query(collection(db, "messages"), orderBy("timestamp", "asc"));
-            const unsubscribe = onSnapshot(q, (querySnapshot) => {
-                const messagesList = querySnapshot.docs.map((doc) => ({
-                    id: doc.id,
-                    ...doc.data(),
-                }));
-                const filteredMessages = messagesList.filter(
-                    (message) =>
-                        (message.senderId === auth.currentUser.uid && message.receiverId === selectedUser.id) ||
-                        (message.senderId === selectedUser.id && message.receiverId === auth.currentUser.uid)
-                );
-                setMessages(filteredMessages);
-
-                // Mark messages as seen
-                filteredMessages.forEach(async (message) => {
-                    if (message.receiverId === auth.currentUser.uid && !message.seen) {
-                        await updateDoc(doc(db, "messages", message.id), {
-                            seen: true,
-                        });
-                    }
-                });
-
-                // Update last chat timestamp
-                if (filteredMessages.length > 0) {
-                    const lastMessage = filteredMessages[filteredMessages.length - 1];
-                    setLastChatTimestamps((prev) => ({
-                        ...prev,
-                        [selectedUser.id]: lastMessage.timestamp,
-                    }));
-                }
-            });
-
-            return () => unsubscribe();
+        if (!myUid || allUsers.length === 0) return;
+        const me = { id: myUid, role };
+        const live = getChatContacts({
+            me,
+            users: allUsers,
+            groups: directory.groups,
+            applications: directory.applications,
+            assignments: directory.assignments,
+        });
+        const liveIds = live.map((c) => c.id);
+        const past = getPastContacts({ me, allMessages, users: allUsers, currentIds: liveIds });
+        if (past.length > 0 || users.length !== live.length) {
+            setUsers([...live, ...past]);
         }
-    }, [selectedUser]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [allMessages, allUsers, directory, myUid, role]);
+
+    // Constrained to my own sent + received messages (no full-collection scan).
+    useEffect(() => {
+        if (!myUid) return;
+        return subscribeToMyMessages(myUid, setAllMessages);
+    }, [myUid]);
+
+    useEffect(() => {
+        if (!selectedUser || !myUid) return;
+        const conv = getConversation(allMessages, myUid, selectedUser.id);
+        if (conv.length > 0) {
+            markConversationSeen(conv, myUid);
+        }
+    }, [selectedUser, myUid, allMessages]);
 
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -105,30 +117,10 @@ function AdChat() {
         };
     }, []);
 
-    useEffect(() => {
-        const q = query(collection(db, "messages"), orderBy("timestamp", "asc"));
-        const unsubscribe = onSnapshot(q, (querySnapshot) => {
-            const messagesList = querySnapshot.docs.map((doc) => ({
-                id: doc.id,
-                ...doc.data(),
-            }));
-            const unreadCounts = {};
-            messagesList.forEach((message) => {
-                if (message.receiverId === auth.currentUser.uid && !message.seen) {
-                    if (!unreadCounts[message.senderId]) {
-                        unreadCounts[message.senderId] = 0;
-                    }
-                    unreadCounts[message.senderId]++;
-                }
-            });
-            setUnreadCounts(unreadCounts);
-        });
-
-        return () => unsubscribe();
-    }, []);
+    const sendGate = canSendTo(selectedUser);
 
     const handleSendMessage = async () => {
-        if (newMessage.trim() === "") return;
+        if (newMessage.trim() === "" || !selectedUser || !sendGate.allowed) return;
 
         if (editingMessage) {
             await updateDoc(doc(db, "messages", editingMessage.id), {
@@ -137,13 +129,22 @@ function AdChat() {
             });
             setEditingMessage(null);
         } else {
-            await addDoc(collection(db, "messages"), {
+            const firstMessage = getConversation(allMessages, auth.currentUser.uid, selectedUser.id).length === 0;
+            await sendChatMessage({
                 senderId: auth.currentUser.uid,
                 receiverId: selectedUser.id,
                 message: newMessage,
-                timestamp: new Date(),
-                seen: false,
             });
+            // Audit the conversation start — never the content.
+            if (firstMessage) {
+                await writeAuditEntry({
+                    actorId: auth.currentUser.uid,
+                    action: "conversation.started",
+                    targetType: "user",
+                    targetId: selectedUser.id,
+                    detail: selectedUser.relationLabel || selectedUser.role || "",
+                });
+            }
         }
 
         setNewMessage("");
@@ -167,7 +168,7 @@ function AdChat() {
     };
 
     const formatTimestamp = (timestamp) => {
-        const date = new Date(timestamp.seconds * 1000);
+        const date = toDateSafe(timestamp) || new Date();
         return date.toLocaleString("en-US", {
             month: "long",
             day: "2-digit",
@@ -180,65 +181,64 @@ function AdChat() {
 
     const isEditDisabled = (timestamp) => {
         const now = new Date();
-        const messageTime = new Date(timestamp.seconds * 1000);
+        const messageTime = toDateSafe(timestamp);
+        if (!messageTime) return true;
         const diff = (now - messageTime) / 1000 / 60; // Difference in minutes
         return diff > 5; // Disable if more than 5 minutes
     };
 
     // Sort users: last chatted user first, then by unread counts
-    const sortedUsers = [...users].sort((a, b) => {
-        if (lastChatTimestamps[a.id] && lastChatTimestamps[b.id]) {
-            return lastChatTimestamps[b.id].seconds - lastChatTimestamps[a.id].seconds;
+    const lastChatTimeByUser = {};
+    for (const m of allMessages) {
+        const other = m.senderId === myUid ? m.receiverId : m.senderId;
+        const t = toDateSafe(m.timestamp)?.getTime() || 0;
+        if (!lastChatTimeByUser[other] || t > lastChatTimeByUser[other]) {
+            lastChatTimeByUser[other] = t;
         }
-        if (lastChatTimestamps[a.id]) return -1;
-        if (lastChatTimestamps[b.id]) return 1;
+    }
+    const sortedUsers = [...users].sort((a, b) => {
+        if (lastChatTimeByUser[a.id] && lastChatTimeByUser[b.id]) {
+            return lastChatTimeByUser[b.id] - lastChatTimeByUser[a.id];
+        }
+        if (lastChatTimeByUser[a.id]) return -1;
+        if (lastChatTimeByUser[b.id]) return 1;
         return (unreadCounts[b.id] || 0) - (unreadCounts[a.id] || 0);
     });
 
     return (
-        <div className="flex">
-            <AdminSidebar />
-            <div className="flex flex-col items-start justify-start h-screen w-full p-10 bg-gray-100">
-                <div className="flex w-full h-svh bg-white rounded-lg shadow-lg overflow-hidden">
-                    <div className="w-1/4 border-r">
-                        <h2 className="text-md font-semibold p-4 border-b">Chat Users</h2>
-                        <ul className="overflow-y-auto h-96">
+        <AppShell role={role} userName={userName}>
+            <PageHeader
+                title="Messages"
+                description="Direct conversations with coordinators and project leads."
+            />
+            <div className="flex flex-col md:flex-row w-full min-h-[65vh] bg-white border border-line rounded overflow-hidden">
+                    <div className="w-full md:w-1/4 border-b md:border-b-0 md:border-r border-line">
+                        <h2 className="text-sm font-semibold text-slate-900 p-4 border-b border-line">Contacts</h2>
+                        <ul className="overflow-y-auto max-h-72 md:max-h-[55vh]">
                             {sortedUsers.map((user) => (
                                 <li
                                     key={user.id}
-                                    className={`p-4 cursor-pointer hover:bg-gray-200 ${
-                                        selectedUser?.id === user.id ? "bg-gray-200" : ""
+                                    className={`p-4 cursor-pointer hover:bg-slate-50 transition ${
+                                        selectedUser?.id === user.id ? "bg-slate-100" : ""
                                     }`}
                                     onClick={() => setSelectedUser(user)}
                                 >
-                                    <div className="flex items-center justify-between">
-                                        {/* Placeholder Image */}
-                                        <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center overflow-hidden mr-3">
-                                            {user.profileImageUrl ? (
-                                                <img
-                                                    src={user.profileImageUrl}
-                                                    alt={`${user.name} ${user.lastname}`}
-                                                    className="w-full h-full object-cover"
-                                                />
-                                            ) : (
-                                                <span className="text-gray-500 text-xs text-center">No Image</span>
-                                            )}
-                                        </div>
-
+                                    <div className="flex items-center justify-between gap-2">
+                                        <Avatar name={`${user.name} ${user.lastname}`} />
                                         {/* User Details */}
-                                        <div className="flex flex-col flex-1">
-                                            <span className="font-bold text-sm">
+                                        <div className="flex flex-col flex-1 min-w-0">
+                                            <span className="font-medium text-sm text-slate-900 truncate">
                                                 {user.name} {user.lastname}
                                             </span>
-                                            <span className="text-xs text-gray-500">{user.role}</span>
+                                            <span className="text-xs text-muted">{user.relationLabel || user.role}</span>
                                             {user.role === "Project Manager" && (
-                                                <span className="text-xs text-gray-400">{user.groupName}</span>
+                                                <span className="text-xs text-slate-400">{user.groupName}</span>
                                             )}
                                         </div>
 
                                         {/* Unread Count */}
                                         {unreadCounts[user.id] > 0 && (
-                                            <span className="text-xs bg-red-500 text-white rounded-full px-2 py-1">
+                                            <span className="text-[11px] font-semibold bg-red-500 text-white rounded-full min-w-5 h-5 px-1 inline-flex items-center justify-center">
                                                 {unreadCounts[user.id]}
                                             </span>
                                         )}
@@ -246,27 +246,35 @@ function AdChat() {
                                 </li>
                             ))}
                         </ul>
+                        {sortedUsers.length === 0 && (
+                            <p className="p-4 text-sm text-muted">
+                              {role === "System Administrator"
+                                ? "Messaging is unavailable for system administrators. Use user management for account issues."
+                                : "No contacts yet. People you work with in the TBI program will appear here."}
+                            </p>
+                        )}
                     </div>
-                    <div className="w-3/4 flex flex-col">
+                    <div className="w-full md:w-3/4 flex flex-col border-t md:border-t-0 border-line min-h-[50vh]">
                         <div className="flex-1 overflow-y-auto">
                             {selectedUser ? (
                                 <>
-                                    <div className="flex items-center mb-4 p-4 top-0 sticky bg-primary-color text-white z-10">
-                                        <div className="flex flex-col">
-                                            <h2 className="text-md font-semibold">
+                                    <div className="flex items-center px-4 py-3 top-0 sticky bg-primary-color text-white z-10">
+                                        <Avatar name={`${selectedUser.name} ${selectedUser.lastname}`} size="sm" />
+                                        <div className="flex flex-col ml-3">
+                                            <h2 className="text-sm font-semibold">
                                                 {selectedUser.name} {selectedUser.lastname}
                                             </h2>
-                                            <span className="text-xs text-white">{selectedUser.role}</span>
+                                            <span className="text-xs text-slate-300">{selectedUser.relationLabel || selectedUser.role}</span>
                                             {selectedUser.role === "Project Manager" && (
-                                                <span className="text-xs text-gray-400">{selectedUser.groupName}</span>
+                                                <span className="text-xs text-slate-400">{selectedUser.groupName}</span>
                                             )}
                                         </div>
                                     </div>
                                     <div className="flex flex-col p-4 space-y-1">
                                         {messages.map((message, index) => {
-                                            const currentMessageTime = new Date(message.timestamp.seconds * 1000);
+                                            const currentMessageTime = toDateSafe(message.timestamp) || new Date(0);
                                             const previousMessageTime =
-                                                index > 0 ? new Date(messages[index - 1].timestamp.seconds * 1000) : null;
+                                                index > 0 ? toDateSafe(messages[index - 1].timestamp) : null;
 
                                             // Check if the time difference between messages exceeds 1 hour or is on a different day
                                             const shouldDisplayTime =
@@ -293,10 +301,10 @@ function AdChat() {
 
                                                     {/* Display the message */}
                                                     <div
-                                                        className={`p-2 rounded-md text-sm ${
+                                                        className={`px-3 py-2 rounded-lg text-sm max-w-[80%] ${
                                                             message.senderId === auth.currentUser.uid
-                                                                ? "bg-blue-400 text-white self-end"
-                                                                : "bg-gray-200 self-start"
+                                                                ? "bg-primary-color text-white self-end"
+                                                                : "bg-slate-100 text-slate-800 self-start"
                                                         }`}
                                                         title={formatTimestamp(message.timestamp)}
                                                     >
@@ -327,17 +335,17 @@ function AdChat() {
                                                                     {showOptions === message.id && (
                                                                         <div
                                                                             ref={dropdownRef}
-                                                                            className="absolute right-0 mt-2 w-48 bg-white border rounded shadow-lg z-10"
+                                                                            className="absolute right-0 mt-2 w-40 bg-white border border-line rounded shadow-lg z-10"
                                                                         >
                                                                             <button
-                                                                                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                                                                className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
                                                                                 onClick={() => handleEditMessage(message)}
                                                                                 disabled={isEditDisabled(message.timestamp)}
                                                                             >
                                                                                 Edit
                                                                             </button>
                                                                             <button
-                                                                                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                                                                className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
                                                                                 onClick={() => handleDeleteMessage(message.id)}
                                                                             >
                                                                                 Delete
@@ -363,31 +371,38 @@ function AdChat() {
                                     </div>
                                 </>
                             ) : (
-                                <p className="text-center text-gray-500">Select a user to start chatting</p>
+                                <div className="flex-1 flex items-center justify-center p-8">
+                                    <EmptyState title="No conversation selected" description="Choose a contact to start messaging." />
+                                </div>
                             )}
                         </div>
-                        {selectedUser && (
-                            <div className="p-4 border-t flex items-center">
+                        {selectedUser &&
+                          (sendGate.allowed ? (
+                            <div className="p-4 border-t border-line flex items-center gap-2">
                                 <input
                                     type="text"
                                     value={newMessage}
                                     onChange={(e) => setNewMessage(e.target.value)}
                                     onKeyPress={handleKeyPress}
-                                    className="w-full p-2 border text-sm rounded-sm"
+                                    className="tbi-input"
                                     placeholder="Type your message..."
+                                    aria-label="Type your message"
                                 />
                                 <button
                                     onClick={handleSendMessage}
-                                    className="ml-2 px-4 py-2 bg-primary-color text-white text-sm rounded-sm hover:bg-opacity-80 transition"
+                                    className="px-4 py-2 bg-primary-color text-white text-sm font-medium rounded hover:bg-primary-deep transition shrink-0"
                                 >
                                     {editingMessage ? "Update" : "Send"}
                                 </button>
                             </div>
-                        )}
+                          ) : (
+                            <p role="note" className="p-4 border-t border-line text-[13px] text-amber-800 bg-amber-50">
+                              {sendGate.reason}
+                            </p>
+                          ))}
                     </div>
-                </div>
             </div>
-        </div>
+        </AppShell>
     );
 }
 

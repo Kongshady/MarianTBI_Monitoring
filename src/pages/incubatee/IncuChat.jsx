@@ -1,152 +1,130 @@
 import { useState, useEffect, useRef } from "react";
-import { collection, getDocs, addDoc, query, orderBy, onSnapshot, doc, getDoc, updateDoc, deleteDoc, where } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, updateDoc, deleteDoc, query, where } from "firebase/firestore";
 import { db, auth } from "../../config/marian-config.js";
-import IncubateeSidebar from "../../components/sidebar/IncubateeSidebar.jsx";
+import {
+  subscribeToMyMessages,
+  getConversation,
+  getUnreadCounts,
+  sendChatMessage,
+  markConversationSeen,
+} from "../../lib/chat.js";
+import { canSendTo, getChatContacts, getPastContacts } from "../../lib/messaging.js";
+import { writeAuditEntry } from "../../lib/audit.js";
+import { toDateSafe } from "../../lib/domain.js";
+import AppShell from "../../components/layout/AppShell.jsx";
+import PageHeader from "../../components/ui/PageHeader.jsx";
+import Avatar from "../../components/ui/Avatar.jsx";
+import { EmptyState } from "../../components/ui/states.jsx";
 import { FaEllipsisV } from "react-icons/fa";
 
 function IncuChat() {
   const [users, setUsers] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
+  const [role, setRole] = useState("");
+  const [userName, setUserName] = useState("");
+  const [directory, setDirectory] = useState({ groups: [], applications: [], assignments: [] });
   const [selectedUser, setSelectedUser] = useState(null);
-  const [messages, setMessages] = useState([]);
+  const [allMessages, setAllMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
-  const [currentUserGroup, setCurrentUserGroup] = useState(null);
-  const [currentUserRole, setCurrentUserRole] = useState("");
   const [editingMessage, setEditingMessage] = useState(null);
   const [showOptions, setShowOptions] = useState(null);
-  const [unreadCounts, setUnreadCounts] = useState({});
-  const [lastChatTimestamps, setLastChatTimestamps] = useState({});
   const dropdownRef = useRef(null);
 
+  const myUid = auth.currentUser?.uid;
+  const messages = selectedUser && myUid ? getConversation(allMessages, myUid, selectedUser.id) : [];
+  const unreadCounts = myUid ? getUnreadCounts(allMessages, myUid) : {};
+
   useEffect(() => {
-    document.title = "Incubatee | Chats";
+    document.title = "Messages";
 
-    const fetchCurrentUserGroup = async () => {
-      const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        setCurrentUserRole(userData.role);
+    // Relationship directory: contacts derive from applications, startup
+    // membership, and active mentor assignments — never a global directory.
+    const loadDirectory = async () => {
+      try {
+        const me = auth.currentUser;
+        if (!me) return;
+        const userDoc = await getDoc(doc(db, "users", me.uid));
+        if (!userDoc.exists()) return;
+        const userData = { id: userDoc.id, ...userDoc.data() };
+        setRole(userData.role || "");
+        setUserName(`${userData.name || ""} ${userData.lastname || ""}`.trim());
 
-        const groupQuerySnapshot = await getDocs(collection(db, "groups"));
-        const userGroup = groupQuerySnapshot.docs.find(groupDoc =>
-          groupDoc.data().members.some(member => member.email === userData.email) ||
-          groupDoc.data().portfolioManager.email === userData.email
+        const [usersSnap, groupsSnap, appsSnap, assignSnap] = await Promise.all([
+          getDocs(collection(db, "users")),
+          getDocs(collection(db, "groups")),
+          getDocs(query(collection(db, "applications"), where("applicantId", "==", me.uid))),
+          getDocs(query(collection(db, "mentorAssignments"), where("mentorId", "==", me.uid))),
+        ]);
+        const usersList = usersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const groupsList = groupsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const appsList = appsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        // Assignments where I mentor + assignments on my startups.
+        const myGroupIds = new Set(
+          groupsList.filter((g) => (g.members || []).some((m) => m.id === me.uid)).map((g) => g.id)
         );
+        const extraAssignSnap = await getDocs(collection(db, "mentorAssignments"));
+        const assignList = [
+          ...assignSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+          ...extraAssignSnap.docs
+            .map((d) => ({ id: d.id, ...d.data() }))
+            .filter((a) => myGroupIds.has(a.groupId)),
+        ];
+        const seen = new Set();
+        const mergedAssign = assignList.filter((a) => {
+          if (seen.has(a.id)) return false;
+          seen.add(a.id);
+          return true;
+        });
 
-        if (userGroup) {
-          setCurrentUserGroup(userGroup.data());
-        } else {
-          setCurrentUserGroup(null);
-        }
+        setAllUsers(usersList);
+        setDirectory({ groups: groupsList, applications: appsList, assignments: mergedAssign });
+        setUsers(getChatContacts({ me: userData, users: usersList, groups: groupsList, applications: appsList, assignments: mergedAssign }));
+      } catch (error) {
+        console.error("Error loading chat directory:", error);
       }
     };
 
-    fetchCurrentUserGroup();
+    loadDirectory();
   }, []);
 
+  // Past contacts: preserved history from ended relationships (read-only).
   useEffect(() => {
-    const fetchUsers = async () => {
-        const querySnapshot = await getDocs(collection(db, "users"));
-        const usersList = querySnapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-        }));
-
-        let filteredUsers = [];
-
-        if (currentUserGroup) {
-            const currentUserGroupRole = currentUserGroup.members.find(
-                (member) => member.email === auth.currentUser.email
-            )?.groupRole;
-
-            if (currentUserGroupRole === "Project Manager") {
-                // Project Manager can chat with Portfolio Manager and group members
-                filteredUsers = usersList.filter(
-                    (user) =>
-                        (currentUserGroup.portfolioManager.email === user.email ||
-                            currentUserGroup.members.some((member) => member.email === user.email)) &&
-                        user.id !== auth.currentUser.uid
-                );
-            } else if (["System Analyst", "Developer"].includes(currentUserGroupRole)) {
-                // System Analyst and Developer can only chat with group members
-                filteredUsers = usersList.filter(
-                    (user) =>
-                        currentUserGroup.members.some((member) => member.email === user.email) &&
-                        user.id !== auth.currentUser.uid
-                );
-            }
-        }
-
-        setUsers(filteredUsers);
-    };
-
-    fetchUsers();
-}, [currentUserGroup]);
-
-  useEffect(() => {
-    if (selectedUser) {
-      const q = query(
-        collection(db, "messages"),
-        orderBy("timestamp", "asc")
-      );
-      const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const messagesList = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        const filteredMessages = messagesList.filter(message =>
-          (message.senderId === auth.currentUser.uid && message.receiverId === selectedUser.id) ||
-          (message.senderId === selectedUser.id && message.receiverId === auth.currentUser.uid)
-        );
-        setMessages(filteredMessages);
-
-        filteredMessages.forEach(async (message) => {
-          if (message.receiverId === auth.currentUser.uid && !message.seen) {
-            await updateDoc(doc(db, "messages", message.id), {
-              seen: true
-            });
-          }
-        });
-
-        if (filteredMessages.length > 0) {
-          const lastMessage = filteredMessages[filteredMessages.length - 1];
-          setLastChatTimestamps((prev) => ({
-            ...prev,
-            [selectedUser.id]: lastMessage.timestamp,
-          }));
-        }
-      });
-
-      return () => unsubscribe();
-    }
-  }, [selectedUser]);
-
-  useEffect(() => {
-    const q = query(
-      collection(db, "messages"),
-      orderBy("timestamp", "asc")
-    );
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const messagesList = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      const unreadCounts = {};
-      messagesList.forEach(message => {
-        if (message.receiverId === auth.currentUser.uid && !message.seen) {
-          if (!unreadCounts[message.senderId]) {
-            unreadCounts[message.senderId] = 0;
-          }
-          unreadCounts[message.senderId]++;
-        }
-      });
-      setUnreadCounts(unreadCounts);
+    if (!myUid || allUsers.length === 0) return;
+    const me = { id: myUid, role };
+    const live = getChatContacts({
+      me,
+      users: allUsers,
+      groups: directory.groups,
+      applications: directory.applications,
+      assignments: directory.assignments,
     });
+    const liveIds = live.map((c) => c.id);
+    const past = getPastContacts({ me, allMessages, users: allUsers, currentIds: liveIds });
+    if (past.length > 0 || users.length !== live.length) {
+      setUsers([...live, ...past]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allMessages, allUsers, directory, myUid, role]);
 
-    return () => unsubscribe();
-  }, []);
+  // Constrained to my own sent + received messages (no full-collection scan).
+  useEffect(() => {
+    if (!myUid) return;
+    return subscribeToMyMessages(myUid, setAllMessages);
+  }, [myUid]);
+
+  // Mark the open conversation as seen.
+  useEffect(() => {
+    if (!selectedUser || !myUid) return;
+    const conv = getConversation(allMessages, myUid, selectedUser.id);
+    if (conv.length > 0) {
+      markConversationSeen(conv, myUid);
+    }
+  }, [selectedUser, myUid, allMessages]);
+
+  const sendGate = canSendTo(selectedUser);
 
   const handleSendMessage = async () => {
-    if (newMessage.trim() === "") return;
+    if (newMessage.trim() === "" || !selectedUser || !sendGate.allowed) return;
 
     if (editingMessage) {
       await updateDoc(doc(db, "messages", editingMessage.id), {
@@ -155,13 +133,22 @@ function IncuChat() {
       });
       setEditingMessage(null);
     } else {
-      await addDoc(collection(db, "messages"), {
+      const firstMessage = getConversation(allMessages, auth.currentUser.uid, selectedUser.id).length === 0;
+      await sendChatMessage({
         senderId: auth.currentUser.uid,
         receiverId: selectedUser.id,
         message: newMessage,
-        timestamp: new Date(),
-        seen: false
       });
+      // Audit the conversation start — never the content.
+      if (firstMessage) {
+        await writeAuditEntry({
+          actorId: auth.currentUser.uid,
+          action: "conversation.started",
+          targetType: "user",
+          targetId: selectedUser.id,
+          detail: selectedUser.relationLabel || selectedUser.role || "",
+        });
+      }
     }
 
     setNewMessage("");
@@ -185,7 +172,7 @@ function IncuChat() {
   };
 
   const formatTimestamp = (timestamp) => {
-    const date = timestamp.toDate();
+    const date = toDateSafe(timestamp) || new Date();
     return date.toLocaleString("en-US", {
       month: "2-digit",
       day: "2-digit",
@@ -198,79 +185,89 @@ function IncuChat() {
 
   const isEditDisabled = (timestamp) => {
     const now = new Date();
-    const messageTime = timestamp.toDate();
+    const messageTime = toDateSafe(timestamp);
+    if (!messageTime) return true;
     const diff = (now - messageTime) / 1000 / 60;
     return diff > 5;
   };
 
-  const sortedUsers = [...users].sort((a, b) => {
-    if (lastChatTimestamps[a.id] && lastChatTimestamps[b.id]) {
-      return lastChatTimestamps[b.id].seconds - lastChatTimestamps[a.id].seconds;
+  const lastChatTimeByUser = {};
+  for (const m of allMessages) {
+    const other = m.senderId === myUid ? m.receiverId : m.senderId;
+    const t = toDateSafe(m.timestamp)?.getTime() || 0;
+    if (!lastChatTimeByUser[other] || t > lastChatTimeByUser[other]) {
+      lastChatTimeByUser[other] = t;
     }
-    if (lastChatTimestamps[a.id]) return -1;
-    if (lastChatTimestamps[b.id]) return 1;
+  }
+
+  const sortedUsers = [...users].sort((a, b) => {
+    if (lastChatTimeByUser[a.id] && lastChatTimeByUser[b.id]) {
+      return lastChatTimeByUser[b.id] - lastChatTimeByUser[a.id];
+    }
+    if (lastChatTimeByUser[a.id]) return -1;
+    if (lastChatTimeByUser[b.id]) return 1;
     return (unreadCounts[b.id] || 0) - (unreadCounts[a.id] || 0);
   });
 
   return (
-    <div className="flex">
-      <IncubateeSidebar />
-      <div className="flex flex-col items-start justify-start h-screen w-full p-10 bg-gray-100">
-        <div className="flex w-full h-svh bg-white rounded-sm shadow-lg overflow-hidden">
-          <div className="w-1/4 border-r">
-            <h2 className="text-md font-semibold p-4 border-b">Chat Members</h2>
-            <ul className="overflow-y-auto h-96">
-              {sortedUsers.map(user => (
-                <li
-                  key={user.id}
-                  className={`p-4 cursor-pointer hover:bg-gray-200 ${selectedUser?.id === user.id ? "bg-gray-200" : ""}`}
-                  onClick={() => setSelectedUser(user)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center overflow-hidden mr-3">
-                      {user.profileImageUrl ? (
-                        <img
-                          src={user.profileImageUrl}
-                          alt={`${user.name} ${user.lastname}`}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <span className="text-gray-500 text-xs text-center">No Image</span>
-                      )}
-                    </div>
-                    <div className="flex flex-col flex-1">
-                      <span className="font-bold text-sm">
-                        {user.name} {user.lastname}
-                      </span>
-                      <span className="text-xs text-gray-500">{user.role}</span>
-                    </div>
-                    {unreadCounts[user.id] > 0 && (
-                      <span className="text-xs bg-red-500 text-white rounded-full px-2 py-1">
-                        {unreadCounts[user.id]}
-                      </span>
-                    )}
+    <AppShell role={role} userName={userName}>
+      <PageHeader
+        title="Messages"
+        description="Direct conversations with your team and coordinators."
+      />
+      <div className="flex flex-col md:flex-row w-full min-h-[65vh] bg-white border border-line rounded overflow-hidden">
+        <div className="w-full md:w-1/4 border-b md:border-b-0 md:border-r border-line">
+          <h2 className="text-sm font-semibold text-slate-900 p-4 border-b border-line">Contacts</h2>
+          <ul className="overflow-y-auto max-h-72 md:max-h-[55vh]">
+            {sortedUsers.map(user => (
+              <li
+                key={user.id}
+                className={`p-4 cursor-pointer hover:bg-slate-50 transition ${selectedUser?.id === user.id ? "bg-slate-100" : ""}`}
+                onClick={() => setSelectedUser(user)}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <Avatar name={`${user.name} ${user.lastname}`} />
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <span className="font-medium text-sm text-slate-900 truncate">
+                      {user.name} {user.lastname}
+                    </span>
+                      <span className="text-xs text-muted">{user.relationLabel || user.role}</span>
                   </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="w-3/4 flex flex-col">
+                  {unreadCounts[user.id] > 0 && (
+                    <span className="text-[11px] font-semibold bg-red-500 text-white rounded-full min-w-5 h-5 px-1 inline-flex items-center justify-center">
+                      {unreadCounts[user.id]}
+                    </span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+          {sortedUsers.length === 0 && (
+            <p className="p-4 text-sm text-muted">
+              {role === "System Administrator"
+                ? "Messaging is unavailable for system administrators. Use user management for account issues."
+                : "No contacts yet. People you work with in the TBI program will appear here."}
+            </p>
+          )}
+        </div>
+          <div className="w-full md:w-3/4 flex flex-col border-t md:border-t-0 border-line min-h-[50vh]">
             <div className="flex-1 overflow-y-auto">
               {selectedUser ? (
                 <>
-                  <div className="flex items-center mb-4 top-0 sticky p-4 bg-secondary-color text-white z-10">
-                    <div className="flex flex-col">
-                      <h2 className="text-md font-semibold">
+                  <div className="flex items-center top-0 sticky px-4 py-3 bg-primary-color text-white z-10">
+                    <Avatar name={`${selectedUser.name} ${selectedUser.lastname}`} size="sm" />
+                    <div className="flex flex-col ml-3">
+                      <h2 className="text-sm font-semibold">
                         {selectedUser.name} {selectedUser.lastname}
                       </h2>
-                      <span className="text-xs text-white">{selectedUser.role}</span>
+                      <span className="text-xs text-slate-300">{selectedUser.relationLabel || selectedUser.role}</span>
                     </div>
                   </div>
                   <div className="flex flex-col space-y-1 p-4 select-none">
                     {messages.map((message, index) => {
-                      const currentMessageTime = message.timestamp.toDate();
+                      const currentMessageTime = toDateSafe(message.timestamp) || new Date(0);
                       const previousMessageTime =
-                        index > 0 ? messages[index - 1].timestamp.toDate() : null;
+                        index > 0 ? toDateSafe(messages[index - 1].timestamp) : null;
 
                       // Check if the time difference between messages exceeds 1 hour or is on a different day
                       const shouldDisplayTime =
@@ -297,10 +294,10 @@ function IncuChat() {
 
                           {/* Display the message */}
                           <div
-                            className={`p-2 rounded-md text-sm ${
+                            className={`px-3 py-2 rounded-lg text-sm max-w-[80%] ${
                               message.senderId === auth.currentUser.uid
-                                ? "bg-blue-400 text-white self-end"
-                                : "bg-gray-200 self-start"
+                                ? "bg-primary-color text-white self-end"
+                                : "bg-slate-100 text-slate-800 self-start"
                             }`}
                             title={formatTimestamp(message.timestamp)}
                           >
@@ -331,17 +328,17 @@ function IncuChat() {
                                   {showOptions === message.id && (
                                     <div
                                       ref={dropdownRef}
-                                      className="absolute right-0 mt-2 w-48 bg-white border rounded shadow-lg z-10"
+                                      className="absolute right-0 mt-2 w-40 bg-white border border-line rounded shadow-lg z-10"
                                     >
                                       <button
-                                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                        className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
                                         onClick={() => handleEditMessage(message)}
                                         disabled={isEditDisabled(message.timestamp)}
                                       >
                                         Edit
                                       </button>
                                       <button
-                                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                        className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
                                         onClick={() => handleDeleteMessage(message.id)}
                                       >
                                         Delete
@@ -367,31 +364,38 @@ function IncuChat() {
                   </div>
                 </>
               ) : (
-                <p className="text-center p-4 text-gray-500">Select a user to start chatting</p>
+                <div className="flex-1 flex items-center justify-center p-8">
+                  <EmptyState title="No conversation selected" description="Choose a contact to start messaging." />
+                </div>
               )}
             </div>
-            {selectedUser && (
-              <div className="p-4 border-t flex items-center">
-                <input
-                  type="text"
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  className="w-full p-2 border text-sm rounded-sm"
-                  placeholder="Type your message..."
-                />
-                <button
-                  onClick={handleSendMessage}
-                  className="ml-2 px-4 py-2 bg-secondary-color text-white text-sm rounded-sm hover:bg-opacity-80 transition"
-                >
-                  {editingMessage ? "Update" : "Send"}
-                </button>
-              </div>
-            )}
+            {selectedUser &&
+              (sendGate.allowed ? (
+                <div className="p-4 border-t border-line flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    onKeyPress={handleKeyPress}
+                    className="tbi-input"
+                    placeholder="Type your message..."
+                    aria-label="Type your message"
+                  />
+                  <button
+                    onClick={handleSendMessage}
+                    className="px-4 py-2 bg-primary-color text-white text-sm font-medium rounded hover:bg-primary-deep transition shrink-0"
+                  >
+                    {editingMessage ? "Update" : "Send"}
+                  </button>
+                </div>
+              ) : (
+                <p role="note" className="p-4 border-t border-line text-[13px] text-amber-800 bg-amber-50">
+                  {sendGate.reason}
+                </p>
+              ))}
           </div>
-        </div>
       </div>
-    </div>
+    </AppShell>
   );
 }
 

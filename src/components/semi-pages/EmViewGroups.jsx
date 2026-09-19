@@ -1,22 +1,76 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams } from "react-router-dom";
-import { db } from "../../config/marian-config.js";
+import { auth, db } from "../../config/marian-config.js";
 import { doc, getDoc, collection, query, where, getDocs, updateDoc, addDoc, serverTimestamp } from "firebase/firestore";
 import { FaPencilAlt } from "react-icons/fa";
-import EmployeeSidebar from "../sidebar/EmployeeSidebar.jsx";
+import AppShell from "../layout/AppShell.jsx";
+import PageHeader from "../ui/PageHeader.jsx";
+import StatusBadge from "../ui/StatusBadge.jsx";
+import Tabs from "../ui/Tabs.jsx";
+import { ErrorState, PageSkeleton } from "../ui/states.jsx";
+import StartupMetrics from "../groups/StartupMetrics.jsx";
+import TeamSection from "../groups/TeamSection.jsx";
+import SectionEmptyState from "../groups/SectionEmptyState.jsx";
+import {
+  comparePriority,
+  formatDateSafe,
+  normalizePriority,
+  normalizeRequestStatus,
+  normalizeTaskStatus,
+  toDateSafe,
+} from "../../lib/domain.js";
+import MilestonesPanel from "../milestones/MilestonesPanel.jsx";
+import MentorshipPanel from "../mentorship/MentorshipPanel.jsx";
+import ReportsPanel from "../reports/ReportsPanel.jsx";
+import AssessmentsPanel from "../assessments/AssessmentsPanel.jsx";
+import IncubationStatusPanel from "../incubation/IncubationStatusPanel.jsx";
+import DocumentsPanel from "../documents/DocumentsPanel.jsx";
+import {
+  canAssignMentors,
+  canDeleteAssessment,
+  canDeleteMilestone,
+  canManageAssessments,
+  canManageIncubationStatus,
+  canReviewReports,
+} from "../../lib/permissions.js";
 
 function EmViewGroup() {
   const { groupId } = useParams();
   const [group, setGroup] = useState(null);
+  const [groupError, setGroupError] = useState("");
   const [requests, setRequests] = useState([]);
   const [workplan, setWorkplan] = useState([]);
-  const [activeTable, setActiveTable] = useState("requests");
+  const [activeTable, setActiveTable] = useState("overview");
+  const [viewerRole, setViewerRole] = useState("");
+  const [viewerName, setViewerName] = useState("");
   const [groupMembers, setGroupMembers] = useState([]);
   const [isRemarksModalOpen, setIsRemarksModalOpen] = useState(false);
   const [currentRequest, setCurrentRequest] = useState(null);
   const [remarks, setRemarks] = useState("");
+  const [requestSearch, setRequestSearch] = useState("");
+  const [requestStatus, setRequestStatus] = useState("all");
+  const [taskSearch, setTaskSearch] = useState("");
+  const [taskStatus, setTaskStatus] = useState("all");
+  const [milestoneCounts, setMilestoneCounts] = useState(null);
+  const [documentCount, setDocumentCount] = useState(null);
+  const [reportCount, setReportCount] = useState(null);
 
   useEffect(() => {
+    const fetchViewerRole = async () => {
+      try {
+        const current = auth.currentUser;
+        if (!current) return;
+        const userDoc = await getDoc(doc(db, "users", current.uid));
+        if (userDoc.exists()) {
+          setViewerRole(userDoc.data().role || "");
+          setViewerName(`${userDoc.data().name || ""} ${userDoc.data().lastname || ""}`.trim());
+        }
+      } catch (error) {
+        console.error("Error fetching viewer role:", error);
+      }
+    };
+    fetchViewerRole();
+
     const fetchGroup = async () => {
       try {
         const groupDoc = await getDoc(doc(db, "groups", groupId));
@@ -24,7 +78,7 @@ function EmViewGroup() {
           const groupData = groupDoc.data();
 
           const membersWithDetails = await Promise.all(
-            groupData.members.map(async (member) => {
+            (groupData.members || []).map(async (member) => {
               const memberDoc = await getDoc(doc(db, "users", member.id));
               if (memberDoc.exists()) {
                 return { ...member, ...memberDoc.data() };
@@ -35,9 +89,12 @@ function EmViewGroup() {
 
           setGroup({ id: groupDoc.id, ...groupData });
           setGroupMembers(membersWithDetails);
+        } else {
+          setGroupError("Startup not found.");
         }
       } catch (error) {
         console.error("Error fetching group:", error);
+        setGroupError("We couldn't load this startup. Please try again.");
       }
     };
 
@@ -87,10 +144,10 @@ function EmViewGroup() {
       const request = requests.find((req) => req.id === requestId);
 
       if (projectManager && request) {
-        // Notify the Project Manager
+        // Notify the Project Manager (plain text; rendered safely)
         await addDoc(collection(db, "notifications"), {
           userId: projectManager.id, // ID of the Project Manager
-          message: `<b style="color:blue">Request Update:</b> The status of a request <b>${request.resourceToolNeeded || "N/A"}</b> in your group <b>${group.name}</b> has been updated to <b style="color:green">${newStatus}</b>.`,
+          message: `Request Update: The status of a request ${request.resourceToolNeeded || "N/A"} in your group ${group.name} has been updated to ${newStatus}.`,
           createdAt: serverTimestamp(), // Use Firestore's serverTimestamp
           read: false,
           type: "request-status-update",
@@ -118,184 +175,194 @@ function EmViewGroup() {
     }
   };
 
+  // Table filters run above the loading guard (they only read requests /
+  // workplan state) so hook order stays stable across renders.
+  const filteredRequests = useMemo(() => {
+    const q = requestSearch.trim().toLowerCase();
+    return [...requests]
+      .filter((r) => {
+        if (requestStatus === "open" && normalizeRequestStatus(r.status) === "Done") return false;
+        if (requestStatus === "done" && normalizeRequestStatus(r.status) !== "Done") return false;
+        if (!q) return true;
+        return [r.responsibleTeamMember, r.requestType, r.description, r.resourceToolNeeded]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(q);
+      })
+      .sort((a, b) => {
+        if (comparePriority(a.priorityLevel, b.priorityLevel) !== 0) {
+          return comparePriority(a.priorityLevel, b.priorityLevel);
+        }
+        const aDone = normalizeRequestStatus(a.status) === "Done";
+        const bDone = normalizeRequestStatus(b.status) === "Done";
+        if (aDone && !bDone) return 1;
+        if (!aDone && bDone) return -1;
+        return (toDateSafe(a.dateEntry)?.getTime() || 0) - (toDateSafe(b.dateEntry)?.getTime() || 0);
+      });
+  }, [requests, requestSearch, requestStatus]);
+
+  const filteredWorkplan = useMemo(() => {
+    const q = taskSearch.trim().toLowerCase();
+    return workplan
+      .filter((t) => {
+        if (taskStatus !== "all" && normalizeTaskStatus(t.status) !== taskStatus) return false;
+        if (!q) return true;
+        return [t.taskName, t.assignedTo].filter(Boolean).join(" ").toLowerCase().includes(q);
+      })
+      .slice()
+      .sort((a, b) => {
+        if (comparePriority(a.priorityLevel, b.priorityLevel) !== 0) {
+          return comparePriority(a.priorityLevel, b.priorityLevel);
+        }
+        return (toDateSafe(a.startDate)?.getTime() || 0) - (toDateSafe(b.startDate)?.getTime() || 0);
+      });
+  }, [workplan, taskSearch, taskStatus]);
+
+  const tabs = [
+    { key: "overview", label: "Overview" },
+    { key: "requests", label: "Requests", count: requests.length },
+    { key: "workplan", label: "Workplan", count: workplan.length },
+    { key: "milestones", label: "Milestones" },
+    { key: "mentorship", label: "Mentorship" },
+    { key: "reports", label: "Reports" },
+    { key: "documents", label: "Documents" },
+    { key: "assessments", label: "Assessments" },
+  ];
+
   if (!group) {
     return (
-      <div className="flex items-center justify-center h-svh">
-        Loading... Please Wait.
-      </div>
+      <AppShell role={viewerRole} userName={viewerName}>
+        {groupError ? (
+          <ErrorState message={groupError} onRetry={() => window.location.reload()} />
+        ) : (
+          <PageSkeleton rows={6} />
+        )}
+      </AppShell>
     );
   }
 
-  return (
-    <div className="flex">
-      <EmployeeSidebar />
-      <div className="flex flex-col items-start h-screen w-full p-10 overflow-y-auto">
-        <h1 className="text-4xl font-bold mb-2">{group.name}</h1>
-        <p className="text-sm italic">{group.description}</p>
-        {group.imageUrl && (
-          <img
-            src={group.imageUrl}
-            alt={group.name}
-            className="mt-2 w-full h-40 object-cover rounded-lg"
-          />
-        )}
-        <div className="mt-2 flex flex-col justify-between items-start w-full gap-4 mb-4">
-          {/* Members List */}
-          <div>
-            <h3 className="font-bold text-md">Members:</h3>
-            <ul className="text-sm">
-              {groupMembers.map((member) => (
-                <li key={member.id}>
-                  {member.name} {member.lastname} - {member.groupRole} {/* Display group role instead of actual role */}
-                </li>
-              ))}
-            </ul>
-          </div>
+  const activeTasks = workplan.filter((task) => normalizeTaskStatus(task.status) !== "Completed").length;
+  const openRequests = requests.filter((r) => normalizeRequestStatus(r.status) !== "Done").length;
+  const manager = group.portfolioManager;
 
-          {/* Cards for workplan statistics */}
-          <div className="flex gap-2 ">
-            {/* Card for total number of tasks */}
-            <div className="bg-blue-500 text-white text-center p-2 rounded-sm shadow-md">
-              <h3 className="text-xs">No. of Tasks</h3>
-              <p className="text-md font-semibold mt-1">{workplan.length}</p>
+  return (
+    <AppShell role={viewerRole} userName={viewerName}>
+      <PageHeader
+        backTo="/employee-groups"
+        backLabel="Startups"
+        title={group.name}
+        description={group.description}
+        actions={<StatusBadge status={group.incubateeStatus || "Active"} />}
+      />
+
+      {group.imageUrl && (
+        <img src={group.imageUrl} alt="" className="w-full h-32 object-cover rounded border border-line mb-5" />
+      )}
+
+      <Tabs tabs={tabs} active={activeTable} onChange={setActiveTable} />
+          {activeTable === "overview" && (
+            <div className="flex flex-col gap-5">
+              <StartupMetrics
+                metrics={{
+                  openRequests,
+                  activeTasks,
+                  taskTotal: workplan.length,
+                  milestonesDone: milestoneCounts?.done,
+                  milestonesTotal: milestoneCounts?.total,
+                  documents: documentCount,
+                  reports: reportCount,
+                }}
+                onSelect={setActiveTable}
+              />
+              <TeamSection members={groupMembers} portfolioManager={manager || null} />
+              <section aria-label="Lifecycle status">
+                <IncubationStatusPanel
+                  group={group}
+                  groupId={groupId}
+                  actorId={auth.currentUser?.uid}
+                  canManage={canManageIncubationStatus({ appRole: viewerRole })}
+                  accentColor="bg-primary-color"
+                />
+              </section>
             </div>
-            {/* Card for pending tasks */}
-            <div className="bg-yellow-500 text-white text-center p-2 rounded-sm shadow-md">
-              <h3 className="text-xs">Pending Tasks</h3>
-              <p className="text-md font-semibold mt-1">
-                {workplan.filter((task) => task.status === "Pending").length}
-              </p>
-            </div>
-            {/* Card for completed tasks */}
-            <div className="bg-green-500 text-white text-center p-2 rounded-sm shadow-md">
-              <h3 className="text-xs">Completed Tasks</h3>
-              <p className="text-md font-semibold mt-1">
-                {workplan.filter((task) => task.status === "Completed").length}
-              </p>
-            </div>
-            {/* Card for overall workplan completion */}
-            <div
-              className={`text-white text-center p-2 rounded-sm shadow-md ${workplan.length > 0
-                ? Math.round(
-                  (workplan.filter((task) => task.status === "Completed").length /
-                    workplan.length) *
-                  100
-                ) >= 75
-                  ? "bg-green-500"
-                  : Math.round(
-                    (workplan.filter((task) => task.status === "Completed").length /
-                      workplan.length) *
-                    100
-                  ) >= 50
-                    ? "bg-yellow-500"
-                    : "bg-red-500"
-                : "bg-gray-500"
-                }`}
-            >
-              <h3 className="text-xs">Total Progress Completion</h3>
-              <p className="text-md font-semibold mt-1">
-                {workplan.length > 0
-                  ? `${Math.round(
-                    (workplan.filter((task) => task.status === "Completed").length /
-                      workplan.length) *
-                    100
-                  )}%`
-                  : "0%"}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="mt-2 w-full">
-          <div className="flex mb-4">
-            <button
-              onClick={() => setActiveTable("requests")}
-              className={`${activeTable === "requests" ? "bg-primary-color text-white" : "bg-white border border-primary-color"
-                } text-primary-color px-4 py-2 text-xs  hover:bg-opacity-80 transition`}
-            >
-              {activeTable === "requests" ? "Group Requests" : "Group Requests"}
-            </button>
-            <button
-              onClick={() => setActiveTable("workplan")}
-              className={`${activeTable === "workplan" ? "bg-primary-color text-white" : "bg-white border border-primary-color"
-                } text-primary-color px-4 py-2 text-xs  hover:bg-opacity-80 transition`}
-            >
-              {activeTable === "workplan" ? "Project Workplan" : "Project Workplan"}
-            </button>
-          </div>
+          )}
           {activeTable === "requests" && (
-            <div className="overflow-y-auto h-80 mt-1">
-              <p className="font-bold mb-2">Requested Needs</p>
-              <table className="min-w-full bg-white text-xs text-left">
-                <thead className="sticky top-0 bg-primary-color text-white">
+            <div>
+              <div className="flex flex-wrap items-end gap-2 mb-3">
+                <div className="flex-1 min-w-[150px] sm:flex-none">
+                  <label htmlFor="emRequestSearch" className="tbi-label">Search</label>
+                  <input
+                    id="emRequestSearch"
+                    type="search"
+                    value={requestSearch}
+                    onChange={(e) => setRequestSearch(e.target.value)}
+                    placeholder="Member, type, or keyword"
+                    className="tbi-input sm:max-w-64"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="emRequestStatus" className="tbi-label">Status</label>
+                  <select
+                    id="emRequestStatus"
+                    value={requestStatus}
+                    onChange={(e) => setRequestStatus(e.target.value)}
+                    className="tbi-input sm:max-w-44"
+                  >
+                    <option value="all">All</option>
+                    <option value="open">Open</option>
+                    <option value="done">Done</option>
+                  </select>
+                </div>
+              </div>
+            <div className="bg-white border border-line rounded overflow-x-auto">
+              <table className="tbi-table min-w-[900px]">
+                <thead>
                   <tr>
-                    <th className="p-2 font-medium">Responsible Team Member</th>
-                    <th className="p-2 font-medium">Request Type</th>
-                    <th className="p-2 font-medium">Description</th>
-                    <th className="p-2 font-medium">Date Entry</th>
-                    <th className="p-2 font-medium">Date Needed</th>
-                    <th className="p-2 font-medium">Specific Needs</th>
-                    <th className="p-2 font-medium">Prospect Resource Person</th>
-                    <th className="p-2 font-medium">Priority Level</th>
-                    <th className="p-2 font-medium">Remarks</th>
-                    <th className="p-2 font-medium">Status</th>
+                    <th scope="col">Team member</th>
+                    <th scope="col">Request type</th>
+                    <th scope="col">Description</th>
+                    <th scope="col">Date entry</th>
+                    <th scope="col">Date needed</th>
+                    <th scope="col">Specific needs</th>
+                    <th scope="col">Resource person</th>
+                    <th scope="col">Priority</th>
+                    <th scope="col">Remarks</th>
+                    <th scope="col">Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {requests.length > 0 ? (
-                    [...requests]
-                      .sort((a, b) => {
-                        const priorityOrder = { HIGH: 1, MEDIUM: 2, LOW: 3 };
-                        if (a.status === "Done" && b.status !== "Done") return 1;
-                        if (a.status !== "Done" && b.status === "Done") return -1;
-                        if (priorityOrder[a.priorityLevel] !== priorityOrder[b.priorityLevel]) {
-                          return priorityOrder[a.priorityLevel] - priorityOrder[b.priorityLevel];
-                        }
-                        return new Date(a.dateEntry) - new Date(b.dateEntry);
-                      })
-                      .map((request, index) => (
-                        <tr
-                          key={request.id}
-                          className={`${
-                            request.status === "Done" ? "bg-gray-200 opacity-70" : index % 2 === 0 ? "bg-white" : "bg-gray-100"
-                          }`}
-                        >
-                          <td className="p-2">{request.responsibleTeamMember}</td>
-                          <td className="p-2">{request.requestType}</td>
-                          <td className="p-2">{request.description}</td>
-                          <td className="p-2">
-                            {new Date(request.dateEntry.seconds * 1000).toLocaleDateString()}
+                  {filteredRequests.map((request) => (
+                        <tr key={request.id}>
+                          <td>{request.responsibleTeamMember}</td>
+                          <td>{request.requestType}</td>
+                          <td className="max-w-[220px]">{request.description}</td>
+                          <td>{formatDateSafe(request.dateEntry)}</td>
+                          <td>{request.dateNeeded ? formatDateSafe(request.dateNeeded) : "—"}</td>
+                          <td>{request.resourceToolNeeded}</td>
+                          <td>{request.prospectResourcePerson || "—"}</td>
+                          <td>
+                            <StatusBadge status={normalizePriority(request.priorityLevel)} />
                           </td>
-                          <td className="p-2">{request.dateNeeded}</td>
-                          <td className="p-2">{request.resourceToolNeeded}</td>
-                          <td className="p-2">{request.prospectResourcePerson}</td>
-                          <td
-                            className={`p-2 font-bold ${
-                              request.priorityLevel === "HIGH"
-                                ? "text-red-500"
-                                : request.priorityLevel === "MEDIUM"
-                                ? "text-yellow-500"
-                                : "text-green-500"
-                            }`}
-                          >
-                            {request.priorityLevel}
-                          </td>
-                          <td className="p-2 text-center">
+                          <td className="text-center">
                             <button
                               onClick={() => {
                                 setCurrentRequest(request);
                                 setRemarks(request.remarks || "");
                                 setIsRemarksModalOpen(true);
                               }}
-                              className="text-blue-500 hover:underline"
+                              className="text-accent hover:underline"
+                              aria-label={`Edit remarks for ${request.resourceToolNeeded || "request"}`}
                             >
                               <FaPencilAlt />
                             </button>
                           </td>
-                          <td className="p-2">
+                          <td>
                             <select
                               value={request.status || "Pending"}
                               onChange={(e) => handleStatusChange(request.id, e.target.value)}
-                              className="p-1 border rounded"
+                              className="tbi-input !w-auto text-[13px]"
+                              aria-label="Request status"
                             >
                               <option value="Pending">Pending</option>
                               <option value="Requested">Requested</option>
@@ -304,128 +371,169 @@ function EmViewGroup() {
                             </select>
                           </td>
                         </tr>
-                      ))
-                  ) : (
-                    <tr>
-                      <td className="p-2 text-center" colSpan="10">
-                        No requests found.
-                      </td>
-                    </tr>
-                  )}
+                      ))}
                 </tbody>
               </table>
+              {filteredRequests.length === 0 && (
+                <SectionEmptyState
+                  title={requests.length === 0 ? "No requests yet" : "No requests match"}
+                  message={
+                    requests.length === 0
+                      ? "When the team submits needs, they appear here for follow-up."
+                      : "Try a different search term or status filter."
+                  }
+                />
+              )}
+            </div>
             </div>
           )}
 
           {activeTable === "workplan" && (
-            <div className="overflow-y-auto mt-1">
-              <p className="font-bold mb-2">Project Workplan</p>
-              <table className="min-w-full bg-white text-xs text-left">
-                <thead className="sticky top-0 bg-primary-color text-white">
+            <div>
+              <div className="flex flex-wrap items-end gap-2 mb-3">
+                <div className="flex-1 min-w-[150px] sm:flex-none">
+                  <label htmlFor="emTaskSearch" className="tbi-label">Search</label>
+                  <input
+                    id="emTaskSearch"
+                    type="search"
+                    value={taskSearch}
+                    onChange={(e) => setTaskSearch(e.target.value)}
+                    placeholder="Task or assignee"
+                    className="tbi-input sm:max-w-64"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="emTaskStatus" className="tbi-label">Status</label>
+                  <select
+                    id="emTaskStatus"
+                    value={taskStatus}
+                    onChange={(e) => setTaskStatus(e.target.value)}
+                    className="tbi-input sm:max-w-44"
+                  >
+                    <option value="all">All</option>
+                    <option value="Pending">Pending</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Completed">Completed</option>
+                  </select>
+                </div>
+              </div>
+            <div className="bg-white border border-line rounded overflow-x-auto">
+              <table className="tbi-table min-w-[720px]">
+                <thead>
                   <tr>
-                    <th className="p-2 font-medium">Task Name</th>
-                    <th className="p-2 font-medium text-right">Assigned To</th>
-                    <th className="p-2 font-medium">Start Date</th>
-                    <th className="p-2 font-medium">End Date</th>
-                    <th className="p-2 font-medium">Priority Level</th> {/* New Priority Level Column */}
-                    <th className="p-2 font-medium">Status</th>
+                    <th scope="col">Task</th>
+                    <th scope="col">Assigned to</th>
+                    <th scope="col">Start</th>
+                    <th scope="col">Due</th>
+                    <th scope="col">Priority</th>
+                    <th scope="col">Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {workplan.length > 0 ? (
-                    workplan
-                      .slice() // Create a shallow copy to avoid mutating the original array
-                      .sort((a, b) => {
-                        const priorityOrder = { High: 1, Medium: 2, Low: 3 };
-                        if (priorityOrder[a.priorityLevel] !== priorityOrder[b.priorityLevel]) {
-                          return priorityOrder[a.priorityLevel] - priorityOrder[b.priorityLevel];
-                        }
-                        return new Date(a.startDate) - new Date(b.startDate); // Sort by start date if priority is the same
-                      })
-                      .map((task, index) => (
-                        <tr
-                          key={task.id}
-                          className={index % 2 === 0 ? "bg-white" : "bg-gray-100"}
-                        >
-                          <td className="p-2">{task.taskName}</td>
-                          <td className="p-2 text-right">{task.assignedTo}</td>
-                          <td className="p-2">
-                            {task.startDate
-                              ? new Date(task.startDate).toLocaleDateString("en-US", {
-                                year: "numeric",
-                                month: "long",
-                                day: "numeric",
-                              })
-                              : "N/A"}
+                  {filteredWorkplan.map((task) => (
+                        <tr key={task.id}>
+                          <td className="font-medium text-slate-900">{task.taskName}</td>
+                          <td>{task.assignedTo}</td>
+                          <td>{formatDateSafe(task.startDate)}</td>
+                          <td>{formatDateSafe(task.endDate)}</td>
+                          <td>
+                            <StatusBadge status={normalizePriority(task.priorityLevel)} />
                           </td>
-                          <td className="p-2">
-                            {task.endDate
-                              ? new Date(task.endDate).toLocaleDateString("en-US", {
-                                year: "numeric",
-                                month: "long",
-                                day: "numeric",
-                              })
-                              : "N/A"}
-                          </td>
-                          <td
-                            className={`p-2 font-bold ${
-                              task.priorityLevel === "High"
-                                ? "text-red-500"
-                                : task.priorityLevel === "Medium"
-                                ? "text-yellow-500"
-                                : "text-green-500"
-                            }`}
-                          >
-                            {task.priorityLevel}
-                          </td>
-                          <td
-                            className={`p-2 font-semibold ${task.status === "Pending"
-                              ? "text-red-500"
-                              : task.status === "In Progress"
-                                ? "text-yellow-500"
-                                : task.status === "Completed"
-                                  ? "text-green-500"
-                                  : "text-gray-500"
-                              }`}
-                          >
-                            {task.status}
+                          <td>
+                            <StatusBadge status={task.status} />
                           </td>
                         </tr>
-                      ))
-                  ) : (
-                    <tr>
-                      <td className="py-2 px-4 text-center" colSpan="6">
-                        No tasks found.
-                      </td>
-                    </tr>
-                  )}
+                      ))}
                 </tbody>
               </table>
+              {filteredWorkplan.length === 0 && (
+                <SectionEmptyState
+                  title={workplan.length === 0 ? "No tasks yet" : "No tasks match"}
+                  message={
+                    workplan.length === 0
+                      ? "Tasks planned with the team appear here with owners and due dates."
+                      : "Try a different search term or status filter."
+                  }
+                />
+              )}
+            </div>
             </div>
           )}
-        </div>
-      </div>
+
+          {activeTable === "milestones" && (
+            <MilestonesPanel
+              groupId={groupId}
+              groupObjectives={group.objectives}
+              actorId={auth.currentUser?.uid}
+              canManage={true}
+              canDelete={canDeleteMilestone({ appRole: viewerRole })}
+              accentColor="bg-primary-color"
+              onCount={setMilestoneCounts}
+            />
+          )}
+
+          {activeTable === "mentorship" && (
+            <MentorshipPanel
+              groupId={groupId}
+              actorId={auth.currentUser?.uid}
+              canAssign={canAssignMentors({ appRole: viewerRole })}
+              accentColor="bg-primary-color"
+            />
+          )}
+
+          {activeTable === "reports" && (
+            <ReportsPanel
+              groupId={groupId}
+              actorId={auth.currentUser?.uid}
+              canSubmit={false}
+              canReview={canReviewReports({ appRole: viewerRole })}
+              accentColor="bg-primary-color"
+              onCount={setReportCount}
+            />
+          )}
+
+          {activeTable === "documents" && (
+            <DocumentsPanel
+              scope="group"
+              scopeId={groupId}
+              owner={{ id: auth.currentUser?.uid, name: viewerName }}
+              canUpload={false}
+              canVerify={canReviewReports({ appRole: viewerRole })}
+              canDelete={viewerRole === "TBI Manager"}
+              onCount={setDocumentCount}
+            />
+          )}
+
+          {activeTable === "assessments" && (
+            <AssessmentsPanel
+              groupId={groupId}
+              actorId={auth.currentUser?.uid}
+              canManage={canManageAssessments({ appRole: viewerRole })}
+              canDelete={canDeleteAssessment({ appRole: viewerRole })}
+              accentColor="bg-primary-color"
+            />
+          )}
 
       {isRemarksModalOpen && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
-          <div className="bg-white p-6 rounded-lg shadow-lg w-[400px]">
-            <h2 className="text-xl font-bold mb-4 text-center">Edit Remarks</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="Edit remarks">
+          <div className="bg-white p-6 rounded shadow-lg w-full max-w-[400px]">
+            <h2 className="text-lg font-semibold text-slate-900 mb-4 text-center">Edit remarks</h2>
             <textarea
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
-              className="w-full p-2 border text-sm"
+              className="tbi-input"
               placeholder="Enter remarks here..."
             ></textarea>
             <div className="flex justify-end gap-2 mt-4">
               <button
                 onClick={() => setIsRemarksModalOpen(false)}
-                className="px-4 py-2 bg-gray-500 text-white text-sm rounded-sm hover:bg-gray-600 transition"
+                className="px-4 py-2 bg-slate-100 text-slate-800 text-sm font-medium rounded hover:bg-slate-200 transition"
               >
                 Cancel
               </button>
               <button
                 onClick={handleRemarksSave}
-                className="px-4 py-2 bg-primary-color text-white text-sm rounded-sm hover:bg-opacity-80 transition"
+                className="px-4 py-2 bg-primary-color text-white text-sm font-medium rounded hover:bg-primary-deep transition"
               >
                 Save
               </button>
@@ -433,7 +541,7 @@ function EmViewGroup() {
           </div>
         </div>
       )}
-    </div>
+    </AppShell>
   );
 }
 

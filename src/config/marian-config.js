@@ -4,13 +4,12 @@ import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyC67yvOnj-8ltRpFVfSJaOBjxDjS3Du-Rc",
-  authDomain: "mariantbi-monitoring.firebaseapp.com",
-  projectId: "mariantbi-monitoring",
-  storageBucket: "mariantbi-monitoring.appspot.com",
-  messagingSenderId: "200018396961",
-  appId: "1:200018396961:web:0986c4699ced3d79562060",
-  measurementId: "G-4YGFR43WZ2"
+  apiKey: "AIzaSyBwUbZoHRbAoKg_WI7WJ-LsqSdLXSGJQRg",
+  authDomain: "mariantbi.firebaseapp.com",
+  projectId: "mariantbi",
+  storageBucket: "mariantbi.firebasestorage.app",
+  messagingSenderId: "718144640151",
+  appId: "1:718144640151:web:e6afd706ce1fdff8c085d2"
 };
 
 // Initialize Firebase

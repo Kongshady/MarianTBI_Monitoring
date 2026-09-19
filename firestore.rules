@@ -1,0 +1,544 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function callerDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function callerExists() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function callerRole() {
+      return callerExists() ? callerDoc().role : null;
+    }
+
+    function isApproved() {
+      return callerExists() && callerDoc().status == 'approved';
+    }
+
+    function isManager() {
+      return isApproved() && callerRole() == 'TBI Manager';
+    }
+
+    function isStaff() {
+      return isApproved() && (callerRole() in ['TBI Manager', 'TBI Assistant']);
+    }
+
+    function isManagement() {
+      return isApproved() && callerRole() == 'Management';
+    }
+
+    function isSysAdmin() {
+      return isApproved() && callerRole() == 'System Administrator';
+    }
+
+    // ---- role permission overrides (see roleOverrides below) ----
+    // SysAdmin-recorded adjustments to the code defaults. Document reads
+    // are cached per evaluation, so consulting them in user-admin gates
+    // stays cheap. A revoke wins over a grant for the same key.
+    function overrideDocFor(roleName) {
+      return get(/databases/$(database)/documents/roleOverrides/$(roleName)).data;
+    }
+
+    function overrideActiveFor(roleName) {
+      return roleName != null
+        && exists(/databases/$(database)/documents/roleOverrides/$(roleName))
+        && overrideDocFor(roleName).get('status', 'archived') == 'active';
+    }
+
+    function hasGrant(key) {
+      return callerExists() && callerRole() != null
+        && overrideActiveFor(callerRole())
+        && key in overrideDocFor(callerRole()).get('grants', []);
+    }
+
+    function hasRevoke(key) {
+      return callerExists() && callerRole() != null
+        && overrideActiveFor(callerRole())
+        && key in overrideDocFor(callerRole()).get('revokes', []);
+    }
+
+    function hasEffectiveGrant(key) {
+      return hasGrant(key) && !hasRevoke(key);
+    }
+
+    function groupData(groupId) {
+      return get(/databases/$(database)/documents/groups/$(groupId)).data;
+    }
+
+    // Membership mirrors (memberIds[] / portfolioManagerId) are maintained
+    // by writers going forward; legacy docs without them fall back to the
+    // embedded objects, so no backfill is required for reads.
+    function groupMemberIds(groupId) {
+      let g = groupData(groupId);
+      return 'memberIds' in g ? g.memberIds : g.members.map(m, m.id);
+    }
+
+    function groupManagerId(groupId) {
+      let g = groupData(groupId);
+      return ('portfolioManagerId' in g && g.portfolioManagerId != null)
+        ? g.portfolioManagerId
+        : g.portfolioManager.id;
+    }
+
+    function isGroupParticipant(groupId) {
+      return isApproved() && (
+        isStaff()
+        || groupManagerId(groupId) == request.auth.uid
+        || request.auth.uid in groupMemberIds(groupId)
+      );
+    }
+
+    function isGroupPm(groupId) {
+      return isApproved() && (
+        isStaff()
+        || groupData(groupId).members
+          .filter(m, m.id == request.auth.uid && m.groupRole == 'Project Manager')
+          .size() > 0
+      );
+    }
+
+    function validApplicationTransition(from, to) {
+      return (from == 'Draft' && to == 'Submitted')
+        || (from == 'Submitted' && (to == 'Screening' || to == 'Returned for Revision'))
+        || (from == 'Screening' && (to == 'For Evaluation' || to == 'Returned for Revision' || to == 'Rejected'))
+        || (from == 'For Evaluation' && (to == 'Accepted' || to == 'Rejected' || to == 'Returned for Revision'))
+        || ((from == 'Returned for Revision') && (to == 'Draft' || to == 'Submitted'));
+    }
+
+    function validIncubationTransition(from, to) {
+      return (from == 'Onboarding' && (to == 'Active' || to == 'Withdrawn'))
+        || (from == 'Active' && (to == 'On Hold' || to == 'Final Review' || to == 'Exited' || to == 'Withdrawn'))
+        || (from == 'On Hold' && (to == 'Active' || to == 'Exited' || to == 'Withdrawn'))
+        || (from == 'Final Review' && (to == 'Graduated' || to == 'Exited' || to == 'Continuing'))
+        || (from == 'Continuing' && (to == 'Active' || to == 'Final Review'));
+    }
+
+    // ---- users ----
+    match /users/{userId} {
+      // Owner can always read self (needed for pending-state checks).
+      // Approved users can list for dropdowns/member lookups.
+      allow get: if isSignedIn() && (request.auth.uid == userId || isApproved());
+      allow list: if isApproved();
+
+      // Self-registration: create only your own doc as pending, and only
+      // while public registration is open (missing settings doc = open,
+      // so console bootstrap of the first Manager always works).
+      allow create: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.status == 'pending'
+        && (!exists(/databases/$(database)/documents/systemSettings/registration)
+          || get(/databases/$(database)/documents/systemSettings/registration).data.open != false)
+        && request.resource.data.role in ['Incubatee', 'Applicant', 'Mentor', 'TBI Manager', 'TBI Assistant', 'Portfolio Manager']
+        && request.resource.data.keys().hasOnly(['name', 'lastname', 'email', 'mobile', 'role', 'lifecycleStage', 'status', 'timestamp']);
+
+      // Owner may edit profile fields only; role/status/stage/groupId are
+      // immutable for owners. Email changes use the verified in-app flow:
+      // the owner may rewrite ONLY the email field (after Firebase sends a
+      // confirmation link to the new address); Auth flips on confirmation.
+      allow update: if isSignedIn() && request.auth.uid == userId
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.get('lifecycleStage', null) == resource.data.get('lifecycleStage', null)
+        && (!('groupId' in request.resource.data) || request.resource.data.groupId == resource.data.get('groupId', null))
+        && (request.resource.data.email == resource.data.email
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['email']))
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['name', 'lastname', 'mobile', 'bio', 'jobTitle', 'organization',
+                       'profileImageUrl', 'profileImagePath', 'email',
+                       'facebook', 'github', 'linkedin', 'lastOnline']);
+
+      // Staff may promote Applicant ↔ Incubatee (onboarding / team assignment):
+      // role, stage and startup link only — status untouched, never staff roles.
+      allow update: if isStaff()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'lifecycleStage', 'groupId'])
+        && request.resource.data.role in ['Applicant', 'Incubatee']
+        && resource.data.role in ['Applicant', 'Incubatee']
+        && request.resource.data.status == resource.data.status;
+
+      // TBI Manager and System Administrator administer accounts
+      // (approve/change role/remove). System Administrators hold user admin
+      // only — business writes stay closed to them by each collection's rules.
+      // Hardening: nobody may change their OWN role (another admin must do
+      // it, so no one grants themselves permissions); only a System
+      // Administrator may hand out the System Administrator role; and an
+      // active SysAdmin-recorded revoke of users.approve / users.disable /
+      // roles.assign / users.remove constrains Manager updates and deletes.
+      // Note: deleting the Firestore doc does not delete the Auth account;
+      // orphaned Auth accounts must be cleaned in the Firebase console.
+      allow update: if (isManager() || isSysAdmin())
+        && !(userId == request.auth.uid && request.resource.data.role != resource.data.role)
+        && !(request.resource.data.role == 'System Administrator'
+          && resource.data.role != 'System Administrator'
+          && !isSysAdmin())
+        && !(request.resource.data.status != resource.data.status
+          && request.resource.data.status == 'approved'
+          && hasRevoke('users.approve'))
+        && !(request.resource.data.status != resource.data.status
+          && request.resource.data.status == 'disabled'
+          && hasRevoke('users.disable'))
+        && !(request.resource.data.role != resource.data.role && hasRevoke('roles.assign'));
+      allow delete: if isSysAdmin();
+      allow delete: if isManager() && !hasRevoke('users.remove');
+      // SysAdmin-recorded grants extend single-purpose user administration
+      // to other approved roles. Each grant is narrowly scoped to its exact
+      // transition and fields, so a grant can never smuggle wider access.
+      allow update: if isApproved() && hasEffectiveGrant('users.approve')
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'approved'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+      allow update: if isApproved() && hasEffectiveGrant('users.disable')
+        && resource.data.status == 'approved'
+        && request.resource.data.status == 'disabled'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+      allow update: if isApproved() && hasEffectiveGrant('roles.assign')
+        && userId != request.auth.uid
+        && request.resource.data.role != 'System Administrator'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role']);
+      allow delete: if isApproved() && hasEffectiveGrant('users.remove');
+    }
+
+    // ---- groups (startups) ----
+    match /groups/{groupId} {
+      // Broad read retained: dashboards scan all groups today.
+      // Tighten to membership once queries migrate to where-clauses.
+      allow read: if isApproved();
+      allow create: if isStaff();
+      // Lifecycle moves must follow the transition map; ordinary edits must
+      // leave incubateeStatus untouched. Legacy docs default to Active.
+      allow update: if isStaff() && (
+        request.resource.data.get('incubateeStatus', 'Active')
+          == resource.data.get('incubateeStatus', 'Active')
+        || validIncubationTransition(
+             resource.data.get('incubateeStatus', 'Active'),
+             request.resource.data.get('incubateeStatus', 'Active'))
+      );
+      allow delete: if isManager();
+    }
+
+    // ---- requests & workplan ----
+    match /requests/{docId} {
+      allow read: if isApproved();
+      allow create: if isApproved()
+        && request.resource.data.groupId is string
+        && isGroupParticipant(request.resource.data.groupId);
+      allow update: if isApproved()
+        && isGroupParticipant(resource.data.groupId);
+      allow delete: if isApproved()
+        && (isStaff() || isGroupPm(resource.data.groupId));
+    }
+
+    match /workplan/{docId} {
+      allow read: if isApproved();
+      allow create: if isApproved()
+        && request.resource.data.groupId is string
+        && isGroupParticipant(request.resource.data.groupId);
+      allow update: if isApproved()
+        && isGroupParticipant(resource.data.groupId);
+      allow delete: if isApproved()
+        && (isStaff() || isGroupPm(resource.data.groupId));
+    }
+
+    // ---- messages ----
+    // Participant-only reads. Chat screens query with
+    // where(senderId == me) / where(receiverId == me), so every returned
+    // doc satisfies this. Full-collection scans are denied by design.
+    // Sends additionally require an existing, approved, non-administrator
+    // recipient — System Administrators never participate in general chat,
+    // and forged recipient IDs to unknown/disabled users are rejected.
+    match /messages/{msgId} {
+      allow read: if isApproved()
+        && (resource.data.senderId == request.auth.uid
+          || resource.data.receiverId == request.auth.uid);
+      allow create: if isApproved()
+        && callerRole() != 'System Administrator'
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.receiverId is string
+        && request.resource.data.receiverId != request.auth.uid
+        && get(/databases/$(database)/documents/users/$(request.resource.data.receiverId)).data.status == 'approved'
+        && get(/databases/$(database)/documents/users/$(request.resource.data.receiverId)).data.role != 'System Administrator'
+        && request.resource.data.keys().hasOnly(['senderId', 'receiverId', 'message', 'timestamp', 'seen', 'participants']);
+      // Sender may edit text; receiver may mark seen.
+      allow update: if isApproved() && (
+        (resource.data.senderId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['message', 'edited']))
+        || (resource.data.receiverId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seen']))
+      );
+      allow delete: if isApproved() && resource.data.senderId == request.auth.uid;
+    }
+
+    // ---- notifications ----
+    match /notifications/{notifId} {
+      // Owner-only reads/deletes; matches existing where(userId == uid) queries.
+      allow read, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      // Client-created system events (structured shape carries recipientId,
+      // type, title, related record, deep-link, bucket, and dedupe key
+      // alongside the legacy userId/message/read/timestamp fields so old
+      // readers keep working).
+      allow create: if isApproved()
+        && request.resource.data.userId is string
+        && request.resource.data.message is string
+        && request.resource.data.read == false
+        && request.resource.data.keys().hasOnly(['userId', 'recipientId', 'type', 'category', 'title', 'message', 'relatedType', 'relatedId', 'groupId', 'actionUrl', 'dedupeKey', 'read', 'isRead', 'createdAt', 'timestamp']);
+      // Owner may only flip read state (both spellings).
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'isRead']);
+    }
+
+    // ---- notification preferences (mute toggles; no personal data) ----
+    // Reads are approved-wide so senders can honor mutes; writes stay
+    // owner-only. Single-doc access in practice — nobody needs a reason to
+    // enumerate anyone else's toggles, but they reveal nothing sensitive.
+    match /notificationPrefs/{userId} {
+      allow read: if isApproved();
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ---- notification rate-limit ledger (no personal data) ----
+    // One tiny doc per dedupe key ({ updatedAt }) so repeat events collapse
+    // instead of stacking. Approved users may read/stamp; contents are just
+    // timestamps, and docs are never deleted.
+    match /notificationLedger/{key} {
+      allow read: if isApproved();
+      allow create, update: if isApproved()
+        && request.resource.data.keys().hasOnly(['updatedAt'])
+        && request.resource.data.updatedAt is timestamp;
+      allow delete: if false;
+    }
+
+    match /notifications_meta/{docId} {
+      allow read, write: if isStaff();
+    }
+
+    // ---- lifecycle (new; no legacy client writes yet) ----
+    // Applications: owner manages drafts; staff run screening/evaluation/decision.
+    // Transitions are enforced here — not just in UI — so a crafted write
+    // cannot jump Submitted → Accepted or rewrite a decided application.
+    match /applications/{appId} {
+      // Per-doc read covers both get and owner-scoped list queries.
+      // Management gets organization-wide read for oversight (writes stay closed).
+      allow read: if isApproved()
+        && (resource.data.applicantId == request.auth.uid || isStaff() || isManagement());
+      allow create: if isApproved()
+        && request.resource.data.applicantId == request.auth.uid
+        && request.resource.data.status == 'Draft';
+      // Owner: edit own Draft/Returned, move Draft↔Submitted only, draft
+      // fields + timestamps only — never decisions or linkage.
+      allow update: if isApproved()
+        && resource.data.applicantId == request.auth.uid
+        && resource.data.status in ['Draft', 'Returned for Revision']
+        && request.resource.data.status in ['Draft', 'Submitted']
+        && request.resource.data.applicantId == resource.data.applicantId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+             ['enterpriseName', 'description', 'problem', 'solution', 'targetMarket',
+              'businessModel', 'team', 'programId', 'status', 'submittedAt', 'updatedAt']);
+      // Staff pipeline move: valid transition + decision fields only.
+      allow update: if isApproved() && isStaff()
+        && validApplicationTransition(resource.data.status, request.resource.data.status)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+             ['status', 'decision', 'decisionNotes', 'decidedAt', 'updatedAt']);
+      // Staff onboarding linkage: status unchanged + linkage fields only.
+      allow update: if isApproved() && isStaff()
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+             ['incubateeGroupId', 'incubateeStatus', 'updatedAt']);
+      allow delete: if isManager();
+    }
+
+    // Review history: screening / evaluation / decision events (append-only).
+    // Visible to the applicant as their status timeline — never put internal
+    // deliberation here; that belongs in reviewNotes below.
+    match /applicationEvents/{eventId} {
+      allow read: if isApproved();
+      allow create: if isStaff();
+      allow update, delete: if false;
+    }
+
+    // Internal review notes: staff-only. Applicants see decisions and
+    // returned-for-revision reasons, never these deliberations.
+    match /reviewNotes/{noteId} {
+      allow read, create, update: if isStaff();
+      allow delete: if isManager();
+    }
+
+    // Programs / cohorts.
+    match /programs/{programId} {
+      allow read: if isApproved();
+      allow create, update: if isStaff();
+      allow delete: if isManager();
+    }
+
+    // Incubation plans + milestones (linked via groupId/incubateeId).
+    match /incubationPlans/{planId} {
+      allow read: if isApproved();
+      allow create, update: if isStaff();
+      allow delete: if isManager();
+    }
+
+    match /milestones/{milestoneId} {
+      allow read: if isApproved();
+      allow create: if isApproved()
+        && request.resource.data.groupId is string
+        && isGroupParticipant(request.resource.data.groupId);
+      allow update: if isApproved()
+        && isGroupParticipant(resource.data.groupId);
+      allow delete: if isApproved()
+        && (isStaff() || isGroupPm(resource.data.groupId));
+    }
+
+    // Mentorship: staff assign; assigned mentor records sessions.
+    match /mentorAssignments/{assignmentId} {
+      allow read: if isApproved();
+      allow create, update: if isStaff();
+      allow delete: if isManager();
+    }
+
+    match /mentoringSessions/{sessionId} {
+      allow read: if isApproved();
+      allow create: if isApproved() && (isStaff()
+        || request.resource.data.mentorId == request.auth.uid);
+      allow update: if isApproved() && (isStaff()
+        || resource.data.mentorId == request.auth.uid);
+      allow delete: if isStaff();
+    }
+
+    // Activities + attendance.
+    match /activities/{activityId} {
+      allow read: if isApproved();
+      allow create, update: if isStaff();
+      allow delete: if isManager();
+    }
+
+    match /attendance/{recordId} {
+      allow read: if isApproved();
+      allow create: if isApproved() && (isStaff()
+        || request.resource.data.incubateeId == request.auth.uid
+        || request.resource.data.userId == request.auth.uid);
+      allow update: if isStaff();
+      allow delete: if isManager();
+    }
+
+    // Progress reports: owner drafts/submits; staff review; management oversight read.
+    // Deletes: staff, or the owner while still a Draft (protects review history).
+    match /progressReports/{reportId} {
+      allow read: if isApproved()
+        && (resource.data.incubateeId == request.auth.uid
+          || resource.data.applicantId == request.auth.uid
+          || isStaff()
+          || isManagement());
+      allow create: if isApproved()
+        && (request.resource.data.incubateeId == request.auth.uid
+          || request.resource.data.applicantId == request.auth.uid);
+      allow update: if isApproved() && (isStaff()
+        || resource.data.incubateeId == request.auth.uid
+        || resource.data.applicantId == request.auth.uid);
+      allow delete: if isStaff()
+        || (isApproved()
+          && resource.data.incubateeId == request.auth.uid
+          && resource.data.status == 'Draft');
+    }
+
+    // Assessments: staff-only writes; staff + startup participants read.
+    match /assessments/{assessmentId} {
+      allow read: if isApproved() && (isStaff()
+        || isGroupParticipant(resource.data.groupId));
+      allow create, update: if isStaff();
+      allow delete: if isManager();
+    }
+
+    // Documents: owner submits; staff verify.
+    match /documents/{documentId} {
+      allow read: if isApproved() && (isStaff()
+        || resource.data.ownerId == request.auth.uid);
+      allow create: if isApproved()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.status == 'Submitted'
+        && request.resource.data.keys().hasOnly(
+             ['ownerId', 'ownerName', 'scope', 'scopeId', 'docType', 'fileName',
+              'fileUrl', 'filePath', 'fileSize', 'status', 'reviewerId',
+              'reviewedAt', 'notes', 'createdAt', 'updatedAt']);
+      allow update: if isApproved() && (isStaff()
+        || (resource.data.ownerId == request.auth.uid
+          && resource.data.status in ['Pending', 'Rejected']));
+      allow delete: if isManager();
+    }
+
+    // Outcomes: staff-only writes; staff + startup participants read.
+    // Records are append-only — history survives status changes.
+    match /outcomes/{outcomeId} {
+      allow read: if isApproved() && (isStaff()
+        || resource.data.incubateeId == request.auth.uid
+        || (resource.data.groupId is string && isGroupParticipant(resource.data.groupId)));
+      allow create: if isStaff();
+      allow update, delete: if false;
+    }
+
+    // Announcements: staff manage; readers see published items for
+    // their role (empty audience = everyone). Archive = unpublish.
+    match /announcements/{announcementId} {
+      allow read: if isStaff()
+        || (isApproved()
+          && resource.data.published == true
+          && (resource.data.get('audience', []).size() == 0
+            || callerRole() in resource.data.get('audience', [])));
+      allow create, update: if isStaff();
+      allow delete: if isManager();
+    }
+
+    // ---- system settings (System Administrator writes) ----
+    // Single-doc public read so logged-out signup pages can check the
+    // registration flag. Missing doc = open (bootstrap-safe default).
+    match /systemSettings/{docId} {
+      allow get: if true;
+      allow list: if isManager() || isSysAdmin();
+      allow write: if isSysAdmin();
+    }
+
+    // ---- audit log (append-only; System Administrator reads) ----
+    // Reads are SysAdmin-only: the log records sensitive admin actions and
+    // must not be enumerable by operational roles.
+    match /auditLog/{entryId} {
+      allow read: if isSysAdmin();
+      allow create: if isApproved()
+        && request.resource.data.actorId == request.auth.uid
+        && request.resource.data.action is string
+        && request.resource.data.keys().hasOnly(['actorId', 'action', 'targetType', 'targetId', 'detail', 'createdAt']);
+      allow update, delete: if false;
+    }
+
+    // ---- role permission overrides (System Administrator writes) ----
+    // SysAdmin-recorded grants/revokes adjust the code defaults in
+    // src/lib/roles.js without rewriting them: a missing (or archived)
+    // document means the defaults apply exactly. Overrides are archived,
+    // never deleted, and every change is audit-logged by the client.
+    // The System Administrator role itself is locked: no override document
+    // may target it, so it can never be weakened or escalated by mistake.
+    // Technical keys are validated against src/lib/permissionCatalog.js —
+    // keep both lists in sync when the catalog changes.
+    match /roleOverrides/{roleName} {
+      allow read: if isManager() || isSysAdmin();
+      allow create, update: if isSysAdmin()
+        && roleName != 'System Administrator'
+        && request.resource.data.status in ['active', 'archived']
+        && request.resource.data.grants is list
+        && request.resource.data.revokes is list
+        && request.resource.data.grants.size() <= 60
+        && request.resource.data.revokes.size() <= 60
+        && request.resource.data.grants.hasOnly(['profile.edit.own', 'applications.create.own', 'applications.read.own', 'applications.review', 'applications.review.decide', 'startup.read.own', 'startup.update.own.team', 'startups.read.assigned', 'startups.manage', 'incubatees.read.assigned', 'milestones.manage.own', 'milestones.read.assigned', 'requests.triage.assigned', 'incubation.move.nonterminal', 'incubation.manage.outcomes', 'oversight.read.organization', 'programs.manage', 'programs.manage.delete', 'activities.read', 'activities.read.register', 'activities.manage', 'activities.manage.delete', 'mentorship.read.own', 'mentorship.read.assigned', 'mentorship.record.assigned', 'mentorship.assign', 'reports.submit.own', 'reports.read.assigned', 'reports.review', 'reports.review.delete', 'documents.upload.own', 'documents.verify', 'documents.verify.delete', 'assessments.read.own', 'assessments.input.assigned', 'assessments.manage', 'assessments.manage.delete', 'announcements.read', 'announcements.manage', 'announcements.manage.delete', 'messages.authorized', 'messages.authorized.chain', 'users.approve', 'users.disable', 'users.remove', 'roles.assign', 'roles.configure', 'system.configure', 'audit.read.full'])
+        && request.resource.data.revokes.hasOnly(['profile.edit.own', 'applications.create.own', 'applications.read.own', 'applications.review', 'applications.review.decide', 'startup.read.own', 'startup.update.own.team', 'startups.read.assigned', 'startups.manage', 'incubatees.read.assigned', 'milestones.manage.own', 'milestones.read.assigned', 'requests.triage.assigned', 'incubation.move.nonterminal', 'incubation.manage.outcomes', 'oversight.read.organization', 'programs.manage', 'programs.manage.delete', 'activities.read', 'activities.read.register', 'activities.manage', 'activities.manage.delete', 'mentorship.read.own', 'mentorship.read.assigned', 'mentorship.record.assigned', 'mentorship.assign', 'reports.submit.own', 'reports.read.assigned', 'reports.review', 'reports.review.delete', 'documents.upload.own', 'documents.verify', 'documents.verify.delete', 'assessments.read.own', 'assessments.input.assigned', 'assessments.manage', 'assessments.manage.delete', 'announcements.read', 'announcements.manage', 'announcements.manage.delete', 'messages.authorized', 'messages.authorized.chain', 'users.approve', 'users.disable', 'users.remove', 'roles.assign', 'roles.configure', 'system.configure', 'audit.read.full'])
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt is timestamp
+        && (request.resource.data.get('reason', null) == null || request.resource.data.get('reason', null) is string)
+        && request.resource.data.keys().hasOnly(['grants', 'revokes', 'status', 'reason', 'updatedBy', 'updatedAt']);
+      allow delete: if false;
+    }
+  }
+}

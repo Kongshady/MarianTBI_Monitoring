@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import { db, auth } from "../../config/marian-config.js";
-import {
+import { db, auth } from "../../config/marian-config.js";import {
   doc,
   getDoc,
+  getDocs,
   addDoc,
   collection,
   serverTimestamp,
@@ -13,34 +13,60 @@ import {
   updateDoc,
   deleteDoc,
 } from "firebase/firestore";
-import IncubateeSidebar from "../sidebar/IncubateeSidebar.jsx";
 import RequestsTable from "../modals/RequestsTable.jsx";
 import WorkplanTable from "../modals/WorkplanTable.jsx";
+import MilestonesPanel from "../milestones/MilestonesPanel.jsx";
+import MentorshipPanel from "../mentorship/MentorshipPanel.jsx";
+import ReportsPanel from "../reports/ReportsPanel.jsx";
+import AssessmentsPanel from "../assessments/AssessmentsPanel.jsx";
+import IncubationStatusPanel from "../incubation/IncubationStatusPanel.jsx";
+import DocumentsPanel from "../documents/DocumentsPanel.jsx";
+import AppShell from "../layout/AppShell.jsx";
+import PageHeader from "../ui/PageHeader.jsx";
+import StatusBadge from "../ui/StatusBadge.jsx";
+import Tabs from "../ui/Tabs.jsx";
+import ConfirmDialog from "../ui/ConfirmDialog.jsx";
+import StartupMetrics from "../groups/StartupMetrics.jsx";
+import TeamSection from "../groups/TeamSection.jsx";
+import { toast } from "../../lib/toast.js";
+import { ErrorState, PageSkeleton, AccessRestricted } from "../ui/states.jsx";
+import { resolveGroupAccess } from "../../lib/access.js";
+import { normalizeRequestStatus, normalizeTaskStatus } from "../../lib/domain.js";
+import { canDeleteMilestone, canSubmitAsTeamMember } from "../../lib/permissions.js";
 
 function IncuViewGroup() {
   const { groupId } = useParams();
   const [group, setGroup] = useState(null);
+  const [groupError, setGroupError] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isRequestsTableOpen, setIsRequestsTableOpen] = useState(false);
-  const [isWorkplanTableOpen, setIsWorkplanTableOpen] = useState(true);
+  const [tab, setTab] = useState("overview");
   const [requests, setRequests] = useState([]);
   const [workplan, setWorkplan] = useState([]);
   const [groupMembers, setGroupMembers] = useState([]);
-  const [userRole, setUserRole] = useState(""); // Define userRole
+  const [userRole, setUserRole] = useState(""); // Team function within this startup
+  const [appRole, setAppRole] = useState("");
+  const [userName, setUserName] = useState("");
   const [requestData, setRequestData] = useState({
     responsibleTeamMember: "",
-    requestType: "Technical Request",
+    requestType: "",
     description: "",
     dateEntry: new Date().toISOString().split("T")[0],
     dateNeeded: "",
     resourceToolNeeded: "",
     prospectResourcePerson: "",
-    priorityLevel: "low",
+    priorityLevel: "",
     remarks: "",
     status: "Pending",
   });
   const [isEditing, setIsEditing] = useState(false);
   const [currentRequestId, setCurrentRequestId] = useState(null);
+  const [modalError, setModalError] = useState("");
+  const [confirm, setConfirm] = useState(null);
+  const [myAssignments, setMyAssignments] = useState([]);
+  const [myUid, setMyUid] = useState(null);
+  const [milestoneCounts, setMilestoneCounts] = useState(null);
+  const [documentCount, setDocumentCount] = useState(null);
+  const [reportCount, setReportCount] = useState(null);
 
   useEffect(() => {
     const fetchGroup = async () => {
@@ -49,19 +75,40 @@ function IncuViewGroup() {
         if (groupDoc.exists()) {
           const groupData = groupDoc.data();
           setGroup({ id: groupDoc.id, ...groupData });
-          setGroupMembers(groupData.members);
+          setGroupMembers(groupData.members || []);
 
-          // Determine the logged-in user's groupRole
+          // Determine the logged-in user's groupRole + app role for the shell
           const user = auth.currentUser;
           if (user) {
-            const userInGroup = groupData.members.find((member) => member.id === user.uid);
+            setMyUid(user.uid);
+            const userInGroup = (groupData.members || []).find((member) => member.id === user.uid);
             if (userInGroup) {
               setUserRole(userInGroup.groupRole); // Set the user's groupRole
             }
+            const userDoc = await getDoc(doc(db, "users", user.uid));
+            if (userDoc.exists()) {
+              const userData = userDoc.data();
+              setAppRole(userData.role || "");
+              setUserName(`${userData.name || ""} ${userData.lastname || ""}`.trim());
+            }
+            // Active mentor assignments for record-level access.
+            try {
+              const assignSnap = await getDocs(
+                query(collection(db, "mentorAssignments"), where("mentorId", "==", user.uid))
+              );
+              setMyAssignments(
+                assignSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((a) => !a.endedAt)
+              );
+            } catch (assignError) {
+              console.error("Error fetching assignments:", assignError);
+            }
           }
+        } else {
+          setGroupError("Startup not found.");
         }
       } catch (error) {
         console.error("Error fetching group:", error);
+        setGroupError("We couldn't load this startup. Please try again.");
       }
     };
 
@@ -69,26 +116,28 @@ function IncuViewGroup() {
   }, [groupId]);
 
   useEffect(() => {
-    if (isRequestsTableOpen) {
-      const q = query(collection(db, "requests"), where("groupId", "==", groupId));
-      const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        setRequests(querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-      });
-
-      return () => unsubscribe();
-    }
-  }, [groupId, isRequestsTableOpen]);
+    const q = query(collection(db, "requests"), where("groupId", "==", groupId));
+    const unsubscribe = onSnapshot(
+      q,
+      (querySnapshot) => {
+        setRequests(querySnapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+      },
+      (error) => console.error("Error loading requests:", error)
+    );
+    return () => unsubscribe();
+  }, [groupId]);
 
   useEffect(() => {
-    if (isWorkplanTableOpen) {
-      const q = query(collection(db, "workplan"), where("groupId", "==", groupId));
-      const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        setWorkplan(querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-      });
-
-      return () => unsubscribe();
-    }
-  }, [groupId, isWorkplanTableOpen]);
+    const q = query(collection(db, "workplan"), where("groupId", "==", groupId));
+    const unsubscribe = onSnapshot(
+      q,
+      (querySnapshot) => {
+        setWorkplan(querySnapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+      },
+      (error) => console.error("Error loading workplan:", error)
+    );
+    return () => unsubscribe();
+  }, [groupId]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -108,11 +157,12 @@ const resourceToolOptions = {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setModalError("");
     try {
       if (isEditing) {
         // Update an existing request
         await updateDoc(doc(db, "requests", currentRequestId), requestData);
-        alert("Request updated successfully!");
+        toast("Request updated.");
       } else {
         // Add a new request
         if (!groupId) {
@@ -125,7 +175,7 @@ const resourceToolOptions = {
           groupId,
         });
 
-        alert("Request submitted successfully!");
+        toast("Request submitted.");
       }
 
       setIsModalOpen(false);
@@ -133,7 +183,7 @@ const resourceToolOptions = {
       setCurrentRequestId(null);
     } catch (error) {
       console.error("Error submitting request:", error);
-      alert(`Error submitting request: ${error.message}`);
+      setModalError(error.message || "Failed to submit the request. Please try again.");
     }
   };
 
@@ -142,29 +192,44 @@ const resourceToolOptions = {
     setRequestData(requestToEdit);
     setCurrentRequestId(requestId);
     setIsEditing(true);
+    setModalError("");
     setIsModalOpen(true);
   };
 
   const handleDeleteRequest = async (requestId) => {
-    try {
-      await deleteDoc(doc(db, "requests", requestId));
-      alert("Request deleted successfully!");
-    } catch (error) {
-      console.error("Error deleting request:", error);
-      alert("Error deleting request. Please try again.");
-    }
+    setConfirm({
+      title: "Delete this request?",
+      description: "This cannot be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+      run: async () => {
+        try {
+          await deleteDoc(doc(db, "requests", requestId));
+          toast("Request deleted.");
+        } catch (error) {
+          console.error("Error deleting request:", error);
+          toast("Failed to delete the request.", "error");
+        }
+      },
+    });
   };
 
   const handleAddTask = async (newTask) => {
     try {
+      // Additive UID for future-proof assignment; legacy `assignedTo` name kept for old docs.
+      const assignee = (groupMembers || []).find(
+        (member) => `${member.name} ${member.lastname}` === newTask.assignedTo
+      );
       await addDoc(collection(db, "workplan"), {
         ...newTask,
+        assignedToUid: assignee?.id || null,
         groupId,
         status: "Pending",
       });
-      alert("Task added successfully!");
+      toast("Task added.");
     } catch (error) {
       console.error("Error adding task:", error);
+      toast("Failed to add the task.", "error");
     }
   };
 
@@ -172,20 +237,30 @@ const resourceToolOptions = {
     try {
       const taskDoc = doc(db, "workplan", updatedTask.id);
       await updateDoc(taskDoc, updatedTask);
-      alert("Task updated successfully!");
+      toast("Task updated.");
     } catch (error) {
       console.error("Error updating task:", error);
+      toast("Failed to update the task.", "error");
     }
   };
 
   const handleDeleteTask = async (taskId) => {
-    try {
-      const taskDoc = doc(db, "workplan", taskId);
-      await deleteDoc(taskDoc);
-      alert("Task deleted successfully!");
-    } catch (error) {
-      console.error("Error deleting task:", error);
-    }
+    setConfirm({
+      title: "Delete this task?",
+      description: "This cannot be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+      run: async () => {
+        try {
+          const taskDoc = doc(db, "workplan", taskId);
+          await deleteDoc(taskDoc);
+          toast("Task deleted.");
+        } catch (error) {
+          console.error("Error deleting task:", error);
+          toast("Failed to delete the task.", "error");
+        }
+      },
+    });
   };
 
   const handleUpdateStatus = async (taskId, newStatus) => {
@@ -197,142 +272,133 @@ const resourceToolOptions = {
     }
   };
 
-  if (!group) {
+  const openRequests = requests.filter((r) => normalizeRequestStatus(r.status) !== "Done").length;
+  const activeTasks = workplan.filter((t) => normalizeTaskStatus(t.status) !== "Completed").length;
+
+  if (!group && !groupError) {
     return (
-      <div className="flex items-center justify-center h-svh">
-        Loading... Please Wait.
-      </div>
+      <AppShell role={appRole} userName={userName}>
+        <PageSkeleton rows={6} />
+      </AppShell>
     );
   }
 
-  return (
-    <div className="flex">
-      <IncubateeSidebar />
-      <div className="flex flex-col items-start h-screen w-full p-10 overflow-y-auto">
-        <h1 className="text-4xl font-bold mb-2">{group.name}</h1>
-        <p className="text-sm italic">{group.description}</p>
-        {group.imageUrl && (
-          <img
-            src={group.imageUrl}
-            alt={group.name}
-            className="mt-2 w-full h-40 object-cover rounded-lg"
-          />
-        )}
-        <div className="mt-2 flex flex-col items-start justify-between gap-4 w-full">
-          <div>
-            <h3 className="font-bold text-md">Members:</h3>
-            <ul className="text-sm">
-              {group.members.map((member) => (
-                <li key={member.id}>
-                  {member.name} {member.lastname} - {member.groupRole}
-                </li>
-              ))}
-            </ul>
-          </div>
+  if (!group) {
+    return (
+      <AppShell role={appRole} userName={userName}>
+        <ErrorState message={groupError} onRetry={() => window.location.reload()} />
+      </AppShell>
+    );
+  }
 
-          {/* Cards for workplan statistics */}
-          <div className="flex justify-end gap-2">
-            <div className="bg-blue-500 text-white text-center p-2 rounded-sm shadow-md ">
-              <h3 className="text-xs">No. of Tasks</h3>
-              <p className="text-md font-semibold mt-1">{workplan.length}</p>
-            </div>
-            <div className="bg-yellow-500 text-white text-center p-2 rounded-sm shadow-md ">
-              <h3 className="text-xs">Pending Tasks</h3>
-              <p className="text-md font-semibold mt-1">
-                {workplan.filter((task) => task.status === "Pending").length}
-              </p>
-            </div>
-            <div className="bg-green-500 text-white text-center p-2 rounded-sm shadow-md ">
-              <h3 className="text-xs">Completed Tasks</h3>
-              <p className="text-md font-semibold mt-1">
-                {workplan.filter((task) => task.status === "Completed").length}
-              </p>
-            </div>
-            <div
-              className={`text-white text-center p-2 rounded-sm shadow-md  ${
-                workplan.length > 0
-                  ? Math.round(
-                      (workplan.filter((task) => task.status === "Completed").length /
-                        workplan.length) *
-                        100
-                    ) >= 75
-                    ? "bg-green-500"
-                    : Math.round(
-                        (workplan.filter((task) => task.status === "Completed").length /
-                          workplan.length) *
-                          100
-                      ) >= 50
-                    ? "bg-yellow-500"
-                    : "bg-red-500"
-                  : "bg-gray-500"
-              }`}
-            >
-              <h3 className="text-xs">Total Progress Completion</h3>
-              <p className="text-md font-semibold mt-1">
-                {workplan.length > 0
-                  ? `${Math.round(
-                      (workplan.filter((task) => task.status === "Completed").length /
-                        workplan.length) *
-                        100
-                    )}%`
-                  : "0%"}
-              </p>
-            </div>
+  // Record-level gate: member, actively assigned mentor, staff, or
+  // oversight — never URL ID alone.
+  const accessLevel = resolveGroupAccess({
+    group,
+    userId: myUid,
+    appRole,
+    assignments: myAssignments,
+  });
+
+  if (!accessLevel) {
+    return (
+      <AppShell role={appRole} userName={userName}>
+        <PageHeader backTo="/incubatee-group" backLabel="My startups" title={group.name} />
+        <AccessRestricted
+          message="This startup is not assigned to you. If you need access, ask your TBI administrator."
+          backTo="/incubatee-group"
+          backLabel="Back to my startups"
+        />
+      </AppShell>
+    );
+  }
+
+  // Mentors (and any non-member with access) get a read-only view:
+  // team gates resolve through membership, never the URL alone.
+  const manager = group.portfolioManager;
+  const teamGroupRole = accessLevel === "member" ? userRole : "Developer";
+  const canTeamWrite = accessLevel === "member" && canSubmitAsTeamMember(userRole);
+  const canTeamDelete = accessLevel === "member" && canDeleteMilestone({ groupRole: userRole });
+  const tabs = [
+    { key: "overview", label: "Overview" },
+    { key: "workplan", label: "Workplan", count: workplan.length },
+    { key: "requests", label: "Requests", count: requests.length },
+    { key: "milestones", label: "Milestones" },
+    { key: "mentorship", label: "Mentorship" },
+    { key: "reports", label: "Reports" },
+    { key: "documents", label: "Documents" },
+    { key: "assessments", label: "Assessments" },
+  ];
+
+  const openRequestModal = () => {
+    setRequestData({
+      responsibleTeamMember: "",
+      requestType: "",
+      description: "",
+      dateEntry: new Date().toISOString().split("T")[0],
+      dateNeeded: "",
+      resourceToolNeeded: "",
+      prospectResourcePerson: "",
+      priorityLevel: "",
+      remarks: "",
+      status: "Pending",
+    });
+    setIsModalOpen(true);
+    setIsEditing(false);
+    setModalError("");
+  };
+
+  return (
+    <AppShell role={appRole} userName={userName}>
+      <PageHeader
+        backTo="/incubatee-group"
+        backLabel="My startups"
+        title={group.name}
+        description={group.description}
+        actions={<StatusBadge status={group.incubateeStatus || "Active"} />}
+      />
+
+      {group.imageUrl && (
+        <img src={group.imageUrl} alt="" className="w-full h-32 object-cover rounded border border-line mb-5" />
+      )}
+
+      <Tabs tabs={tabs} active={tab} onChange={setTab} />
+        {tab === "overview" && (
+          <div className="flex flex-col gap-5">
+            <StartupMetrics
+              metrics={{
+                openRequests,
+                activeTasks,
+                taskTotal: workplan.length,
+                milestonesDone: milestoneCounts?.done,
+                milestonesTotal: milestoneCounts?.total,
+                documents: documentCount,
+                reports: reportCount,
+              }}
+              onSelect={setTab}
+            />
+            <TeamSection members={groupMembers} portfolioManager={manager || null} />
+            <section aria-label="Lifecycle status">
+              <IncubationStatusPanel
+                group={group}
+                groupId={groupId}
+                actorId={auth.currentUser?.uid}
+                canManage={false}
+                accentColor="bg-accent"
+              />
+            </section>
           </div>
-        </div>
-        <div className="flex flex-row-reverse mt-4">
-          <button
-            onClick={() => {
-              setIsRequestsTableOpen(true);
-              setIsWorkplanTableOpen(false);
-            }}
-            className={`${
-              isRequestsTableOpen
-                ? "bg-secondary-color text-white"
-                : "bg-white border border-secondary-color"
-            } text-secondary-color px-4 py-2 text-xs hover:bg-opacity-80 transition`}
-          >
-            Group Requests
-          </button>
-          <button
-            onClick={() => {
-              setIsWorkplanTableOpen(true);
-              setIsRequestsTableOpen(false);
-            }}
-            className={`${
-              isWorkplanTableOpen
-                ? "bg-secondary-color text-white"
-                : "bg-white border border-secondary-color"
-            } text-secondary-color px-4 py-2 text-xs hover:bg-opacity-80 transition`}
-          >
-            Workplan
-          </button>
-        </div>
-        {isRequestsTableOpen && (
+        )}
+        {tab === "requests" && (
           <RequestsTable
             requests={requests}
             handleEditRequest={handleEditRequest}
             handleDeleteRequest={handleDeleteRequest}
-            openRequestModal={() => {
-              setRequestData({
-                responsibleTeamMember: "",
-                requestType: "Technical Request",
-                description: "",
-                dateEntry: new Date().toISOString().split("T")[0],
-                dateNeeded: "",
-                resourceToolNeeded: "",
-                prospectResourcePerson: "",
-                priorityLevel: "low",
-                remarks: "",
-                status: "Pending",
-              });
-              setIsModalOpen(true);
-              setIsEditing(false);
-            }}
-            groupRole={userRole} // Pass the user's groupRole
+            openRequestModal={openRequestModal}
+            groupRole={teamGroupRole} // Team-gated; mentors read (see teamGroupRole)
           />
         )}
-        {isWorkplanTableOpen && (
+        {tab === "workplan" && (
           <WorkplanTable
             workplan={workplan}
             groupMembers={groupMembers}
@@ -340,27 +406,75 @@ const resourceToolOptions = {
             handleEditTask={handleEditTask}
             handleDeleteTask={handleDeleteTask}
             handleUpdateStatus={handleUpdateStatus}
-            groupRole={userRole} // Pass the user's groupRole
+            groupRole={teamGroupRole} // Pass the user's groupRole
           />
         )}
-      </div>
-
+        {tab === "milestones" && (
+          <MilestonesPanel
+            groupId={groupId}
+            groupObjectives={group.objectives}
+            actorId={auth.currentUser?.uid}
+            canManage={canTeamWrite}
+            canDelete={canTeamDelete}
+            accentColor="bg-accent"
+            onCount={setMilestoneCounts}
+          />
+        )}
+        {tab === "mentorship" && (
+          <MentorshipPanel
+            groupId={groupId}
+            actorId={auth.currentUser?.uid}
+            canAssign={false}
+            accentColor="bg-accent"
+          />
+        )}
+        {tab === "reports" && (
+          <ReportsPanel
+            groupId={groupId}
+            actorId={auth.currentUser?.uid}
+            canSubmit={canTeamWrite}
+            canReview={false}
+            accentColor="bg-accent"
+            onCount={setReportCount}
+          />
+        )}
+        {tab === "documents" && (
+          <DocumentsPanel
+            scope="group"
+            scopeId={groupId}
+            owner={{ id: auth.currentUser?.uid, name: userName }}
+            canUpload={canTeamWrite}
+            canVerify={false}
+            canDelete={false}
+            onCount={setDocumentCount}
+          />
+        )}
+        {tab === "assessments" && (
+          <AssessmentsPanel
+            groupId={groupId}
+            actorId={auth.currentUser?.uid}
+            canManage={false}
+            canDelete={false}
+            accentColor="bg-accent"
+          />
+        )}
       {isModalOpen && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
-          <div className="bg-white p-6 rounded-lg shadow-lg w-[550px]">
-            <h2 className="text-xl font-bold mb-4 text-center">
-              {isEditing ? "Edit Request" : "Request Needs"}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label={isEditing ? "Edit request" : "Request needs"}>
+          <div className="bg-white p-6 rounded shadow-lg w-full max-w-[550px] max-h-[90vh] overflow-y-auto">
+            <h2 className="text-lg font-semibold text-slate-900 mb-4 text-center">
+              {isEditing ? "Edit request" : "Request needs"}
             </h2>
-            <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-2">
+            <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div className="col-span-2">
-                <label className="block text-sm">
-                  Responsible Team Member <span className="text-red-500">*</span>
+                <label className="tbi-label" htmlFor="req-member">
+                  Responsible team member <span className="text-red-600" aria-hidden="true">*</span>
                 </label>
                 <select
+                  id="req-member"
                   name="responsibleTeamMember"
                   value={requestData.responsibleTeamMember}
                   onChange={handleInputChange}
-                  className="w-full p-2 border text-sm"
+                  className="tbi-input"
                 >
                   <option value="">Select Team Member</option>
                   {groupMembers.map((member) => (
@@ -374,14 +488,15 @@ const resourceToolOptions = {
                 </select>
               </div>
               <div className="col-span-2">
-                <label className="block mb-1 text-sm">
-                  Request Type <span className="text-red-500">*</span>
+                <label className="tbi-label" htmlFor="req-type">
+                  Request type <span className="text-red-600" aria-hidden="true">*</span>
                 </label>
                 <select
+                  id="req-type"
                   name="requestType"
                   value={requestData.requestType}
                   onChange={handleInputChange}
-                  className="w-full p-2 border text-sm"
+                  className="tbi-input"
                 >
                   <option value="">Select Request Type</option>
                   <option value="Human Resource">Human Resource</option>
@@ -390,14 +505,15 @@ const resourceToolOptions = {
                 </select>
               </div>
               <div className="col-span-2">
-                <label className="block mb-1 text-sm">
-                  Specific Needs <span className="text-red-500">*</span>
+                <label className="tbi-label" htmlFor="req-need">
+                  Specific needs <span className="text-red-600" aria-hidden="true">*</span>
                 </label>
                 <select
+                    id="req-need"
                     name="resourceToolNeeded"
                     value={requestData.resourceToolNeeded}
                     onChange={handleInputChange}
-                    className="w-full p-2 border text-sm"
+                    className="tbi-input"
                     disabled={!requestData.requestType} // Disable if no requestType is selected
                 >
                     <option value="">Select Resource/Tool Needed</option>
@@ -410,61 +526,66 @@ const resourceToolOptions = {
                 </select>
               </div>
               <div className="col-span-2">
-                <label className="block mb-1 text-sm">Description</label>
+                <label className="tbi-label" htmlFor="req-desc">Description</label>
                 <textarea
+                  id="req-desc"
                   name="description"
                   value={requestData.description}
                   onChange={handleInputChange}
-                  className="w-full p-2 border text-sm"
+                  className="tbi-input"
                   placeholder="Describe the request in detail"
                 ></textarea>
               </div>
 
               <div>
-                <label className="block mb-1 text-sm">Date Entry</label>
+                <label className="tbi-label" htmlFor="req-entry">Date entry</label>
                 <input
+                  id="req-entry"
                   type="date"
                   name="dateEntry"
                   value={requestData.dateEntry}
                   onChange={handleInputChange}
-                  className="w-full p-2 border text-sm text-gray-400"
+                  className="tbi-input text-slate-400"
                   readOnly
                 />
               </div>
               <div>
-                <label className="block mb-1 text-sm">
-                  Date Needed <span className="text-red-500">*</span>
+                <label className="tbi-label" htmlFor="req-needed">
+                  Date needed <span className="text-red-600" aria-hidden="true">*</span>
                 </label>
                 <input
+                  id="req-needed"
                   type="date"
                   name="dateNeeded"
                   value={requestData.dateNeeded}
                   onChange={handleInputChange}
-                  className="w-full p-2 border text-sm"
+                  className="tbi-input"
                 />
               </div>
               <div>
-                <label className="block mb-1 text-sm">
-                  Prospect Resource Person
+                <label className="tbi-label" htmlFor="req-person">
+                  Prospect resource person
                 </label>
                 <input
+                  id="req-person"
                   type="text"
                   name="prospectResourcePerson"
                   value={requestData.prospectResourcePerson}
                   onChange={handleInputChange}
-                  className="w-full p-2 border text-sm"
+                  className="tbi-input"
                   placeholder="Enter the name of resource person"
                 />
               </div>
               <div>
-                <label className="block mb-1 text-sm">
-                  Priority Level <span className="text-red-500">*</span>
+                <label className="tbi-label" htmlFor="req-priority">
+                  Priority level <span className="text-red-600" aria-hidden="true">*</span>
                 </label>
                 <select
+                  id="req-priority"
                   name="priorityLevel"
                   value={requestData.priorityLevel}
                   onChange={handleInputChange}
-                  className="w-full p-2 border text-sm"
+                  className="tbi-input"
                 >
                   <option value="">Select Priority Level</option>
                   <option value="LOW">Low</option>
@@ -472,11 +593,16 @@ const resourceToolOptions = {
                   <option value="HIGH">High</option>
                 </select>
               </div>
+              {modalError && (
+                <p className="col-span-2 text-red-600 text-[13px]" role="alert">
+                  {modalError}
+                </p>
+              )}
               <div className="col-span-2 flex justify-end gap-2 mt-2">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 bg-gray-500 text-white text-sm rounded-sm hover:bg-gray-600 transition"
+                  className="px-4 py-2 bg-slate-100 text-slate-800 text-sm font-medium rounded hover:bg-slate-200 transition"
                 >
                   Cancel
                 </button>
@@ -489,24 +615,37 @@ const resourceToolOptions = {
                     !requestData.dateNeeded ||
                     !requestData.priorityLevel
                   }
-                  className={`px-4 py-2 text-white text-sm rounded-sm transition ${
+                  className={`px-4 py-2 text-white text-sm font-medium rounded transition ${
                     !requestData.responsibleTeamMember ||
                     !requestData.requestType ||
                     !requestData.resourceToolNeeded ||
                     !requestData.dateNeeded ||
                     !requestData.priorityLevel
-                      ? "bg-gray-400 cursor-not-allowed"
-                      : "bg-secondary-color hover:bg-opacity-80"
+                      ? "bg-slate-300 cursor-not-allowed"
+                      : "bg-primary-color hover:bg-primary-deep"
                   }`}
                 >
-                  {isEditing ? "Update Request" : "Submit Request"}
+                  {isEditing ? "Update request" : "Submit request"}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-    </div>
+      <ConfirmDialog
+        open={!!confirm}
+        title={confirm?.title || ""}
+        description={confirm?.description || ""}
+        confirmLabel={confirm?.confirmLabel || "Confirm"}
+        danger={confirm?.danger || false}
+        onConfirm={async () => {
+          const run = confirm?.run;
+          setConfirm(null);
+          if (run) await run();
+        }}
+        onCancel={() => setConfirm(null)}
+      />
+    </AppShell>
   );
 }
 

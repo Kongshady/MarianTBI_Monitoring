@@ -1,53 +1,56 @@
-import { Link, useNavigate } from "react-router-dom";
-import CustomButton from "../components/CustomButton.jsx";
-import MarianTbiLogo from "../assets/images/MarianTbiLogo.png";
-import { FiArrowLeft } from "react-icons/fi"; // Import back icon
+import { Link } from "react-router-dom";
+import { useEffect } from "react";
+import AuthLayout from "../components/auth/AuthLayout.jsx";
 
+// Public entry to registration. Only Applicant accounts are
+// self-registerable; every other account type is provisioned by a
+// TBI administrator through user management.
 function CreateAccPage() {
-    const navigate = useNavigate();
+  useEffect(() => {
+    document.title = "MarianTrack | Create Account";
+  }, []);
 
-    return (
-        <div className="flex items-center justify-center h-screen relative bg-gradient-to-r from-blue-500 to-indigo-500">
-            {/* Back Button */}
-            <button
-                onClick={() => navigate(-1)} // Navigate to the previous page
-                className="absolute top-4 left-4 text-white hover:text-gray-200 transition"
-            >
-                <FiArrowLeft size={24} />
-            </button>
+  return (
+    <AuthLayout
+      backTo="/login"
+      backLabel="Back to Sign In"
+      eyebrow="Join MarianTrack"
+      title="Create your account"
+      description="Choose how you are joining MarianTrack."
+    >
+      <div className="border border-line rounded p-5">
+        <h2 className="text-base font-semibold text-slate-900">Applicant</h2>
+        <p className="text-sm text-muted mt-1">
+          Apply to the Marian TBI incubation program and submit your startup for review.
+        </p>
+        <Link
+          to="/incubatee-create-account"
+          className="block text-center mt-4 px-4 py-3 bg-primary-color text-white rounded text-[15px] font-semibold hover:bg-primary-deep transition"
+        >
+          Continue as Applicant
+        </Link>
+      </div>
 
-            <div className="flex flex-col gap-6 p-8 bg-white rounded-lg shadow-lg w-1/3">
-                <img
-                    src={MarianTbiLogo}
-                    alt="MarianTbiLogo"
-                    className="w-24 mx-auto shadow-lg p-3 rounded-full"
-                />
-                <h1 className="text-center text-2xl font-bold text-gray-800">Create an Account</h1>
-                <p className="text-center text-sm text-gray-600">
-                    Choose your account type to get started with <span className="font-bold text-primary-color">MarianTrack</span>.
-                </p>
-                <div className="flex flex-col gap-4">
-                    <Link to={"/employee-create-account"}>
-                        <CustomButton
-                            text={"For Employees"}
-                            className={
-                                "bg-primary-color text-white hover:bg-white hover:text-primary-color border border-primary-color transition-all w-full py-3 rounded-md font-semibold"
-                            }
-                        />
-                    </Link>
-                    <p className="text-center text-sm text-gray-500">or</p>
-                    <Link to={"/incubatee-create-account"}>
-                        <CustomButton
-                            text={"For Incubatees"}
-                            className={
-                                "bg-secondary-color text-white hover:bg-white hover:text-secondary-color border border-secondary-color transition-all w-full py-3 rounded-md font-semibold"
-                            }
-                        />
-                    </Link>
-                </div>
-            </div>
-        </div>
-    );
+      <p className="mt-5 text-[13px] text-muted leading-relaxed">
+        Joining as a mentor, employee, or partner? Those accounts are created by Marian TBI
+        administrators. Please contact the TBI office for access.
+      </p>
+
+      <p className="mt-3 text-center text-[13px] text-muted">
+        TBI personnel with an invitation?{" "}
+        <Link to="/employee-create-account" className="font-medium text-accent hover:underline">
+          Request employee access
+        </Link>
+      </p>
+
+      <p className="mt-6 text-center text-sm text-muted">
+        Already have an account?{" "}
+        <Link to="/login" className="font-medium text-accent hover:underline">
+          Sign in
+        </Link>
+      </p>
+    </AuthLayout>
+  );
 }
 
 export default CreateAccPage;
