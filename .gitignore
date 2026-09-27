@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Browser-inspection artifacts from local UI verification runs
+.playwright-mcp
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -472,7 +472,7 @@ function ApplicationDetail() {
                         onChange={(e) => handleChange(field.key, e.target.value)}
                         disabled={!canEdit}
                         rows="3"
-                        className="w-full p-2 border rounded-sm text-sm disabled:bg-gray-100"
+                        className="w-full p-2 border rounded-md text-sm disabled:bg-surface-hover"
                       />
                     ) : (
                       <input
@@ -481,7 +481,7 @@ function ApplicationDetail() {
                         value={form[field.key] || ""}
                         onChange={(e) => handleChange(field.key, e.target.value)}
                         disabled={!canEdit}
-                        className="w-full p-2 border rounded-sm text-sm disabled:bg-gray-100"
+                        className="w-full p-2 border rounded-md text-sm disabled:bg-surface-hover"
                       />
                     )}
                   </div>
@@ -494,7 +494,7 @@ function ApplicationDetail() {
                     <button
                       type="submit"
                       disabled={saving}
-                      className="px-4 py-2 bg-gray-200 rounded-sm text-sm hover:bg-gray-300 disabled:opacity-60"
+                      className="px-4 py-2 bg-line rounded-md text-sm hover:bg-line-strong disabled:opacity-60"
                     >
                       {saving ? "Saving..." : "Save Draft"}
                     </button>
@@ -502,7 +502,7 @@ function ApplicationDetail() {
                       type="button"
                       onClick={handleSubmit}
                       disabled={saving}
-                      className="px-4 py-2 bg-accent text-white rounded-sm text-sm hover:bg-opacity-80 disabled:opacity-60"
+                      className="px-4 py-2 bg-accent text-white rounded-md text-sm hover:bg-opacity-80 disabled:opacity-60"
                     >
                       Review &amp; Submit
                     </button>
@@ -526,9 +526,9 @@ function ApplicationDetail() {
 
             <aside className="flex flex-col gap-4">
               {app.incubateeGroupId ? (
-                <section className="bg-white p-4 rounded-sm shadow">
+                <section className="bg-white p-4 rounded-md shadow">
                   <h2 className="font-bold text-sm mb-1">Linked startup</h2>
-                  <p className="text-xs text-gray-600">
+                  <p className="text-xs text-slate-600">
                     Onboarded{app.incubateeStatus ? ` (${app.incubateeStatus})` : ""}.
                   </p>
                   <Link
@@ -540,9 +540,9 @@ function ApplicationDetail() {
                 </section>
               ) : (
                 needsOnboarding && (
-                  <section className="bg-white p-4 rounded-sm shadow">
+                  <section className="bg-white p-4 rounded-md shadow">
                     <h2 className="font-bold text-sm mb-1">Onboarding</h2>
-                    <p className="text-xs text-gray-500 mb-3">
+                    <p className="text-xs text-muted mb-3">
                       Creates the incubatee startup from this application. History is preserved.
                     </p>
                     <form onSubmit={handleOnboard} className="flex flex-col gap-2">
@@ -553,7 +553,7 @@ function ApplicationDetail() {
                         id="obPm"
                         value={pmId}
                         onChange={(e) => setPmId(e.target.value)}
-                        className="p-2 border rounded-sm text-sm"
+                        className="p-2 border rounded-md text-sm"
                       >
                         <option value="">Select manager</option>
                         {pmList.map((m) => (
@@ -569,7 +569,7 @@ function ApplicationDetail() {
                         id="obProgram"
                         value={obProgramId}
                         onChange={(e) => setObProgramId(e.target.value)}
-                        className="p-2 border rounded-sm text-sm"
+                        className="p-2 border rounded-md text-sm"
                       >
                         <option value="">None</option>
                         {programOptions.map((p) => (
@@ -588,7 +588,7 @@ function ApplicationDetail() {
                             type="date"
                             value={obStartDate}
                             onChange={(e) => setObStartDate(e.target.value)}
-                            className="w-full p-2 border rounded-sm text-sm"
+                            className="w-full p-2 border rounded-md text-sm"
                           />
                         </div>
                         <div>
@@ -600,7 +600,7 @@ function ApplicationDetail() {
                             type="date"
                             value={obEndDate}
                             onChange={(e) => setObEndDate(e.target.value)}
-                            className="w-full p-2 border rounded-sm text-sm"
+                            className="w-full p-2 border rounded-md text-sm"
                           />
                         </div>
                       </div>
@@ -612,14 +612,14 @@ function ApplicationDetail() {
                         value={obObjectives}
                         onChange={(e) => setObObjectives(e.target.value)}
                         rows="2"
-                        className="p-2 border rounded-sm text-sm"
+                        className="p-2 border rounded-md text-sm"
                         placeholder="What should this incubatee accomplish?"
                       />
                       {obError && <p className="text-red-500 text-xs">{obError}</p>}
                       <button
                         type="submit"
                         disabled={obSaving}
-                        className="px-3 py-2 bg-accent text-white rounded-sm text-xs hover:bg-opacity-80 disabled:opacity-60"
+                        className="px-3 py-2 bg-accent text-white rounded-md text-xs hover:bg-opacity-80 disabled:opacity-60"
                       >
                         {obSaving ? "Onboarding..." : "Onboard as Incubatee"}
                       </button>
@@ -629,7 +629,7 @@ function ApplicationDetail() {
               )}
 
               {isStaff && nextStatuses.length > 0 && (
-                <section className="bg-white p-4 rounded-sm shadow">
+                <section className="bg-white p-4 rounded-md shadow">
                   <h2 className="font-bold text-sm mb-2">Staff actions</h2>
                   <label className="block text-xs font-medium mb-1" htmlFor="moveNote">
                     Note (kept in history)
@@ -639,7 +639,7 @@ function ApplicationDetail() {
                     value={moveNote}
                     onChange={(e) => setMoveNote(e.target.value)}
                     rows="2"
-                    className="w-full p-2 border rounded-sm text-sm mb-2"
+                    className="w-full p-2 border rounded-md text-sm mb-2"
                     placeholder="Reason, conditions, next steps..."
                   />
                   <div className="flex flex-col gap-2">
@@ -648,7 +648,7 @@ function ApplicationDetail() {
                         key={to}
                         onClick={() => handleMove(to)}
                         disabled={acting}
-                        className="px-3 py-2 bg-primary-color text-white rounded-sm text-xs hover:bg-opacity-80 disabled:opacity-60"
+                        className="px-3 py-2 bg-primary-color text-white rounded-md text-xs hover:bg-opacity-80 disabled:opacity-60"
                       >
                         Move to {to}
                       </button>
@@ -658,16 +658,16 @@ function ApplicationDetail() {
               )}
 
               {isStaff && (
-              <section className="bg-white p-4 rounded-sm shadow">
+              <section className="bg-white p-4 rounded-md shadow">
                 <h2 className="font-bold text-sm mb-1">Internal review notes</h2>
-                <p className="text-xs text-gray-500 mb-2">
+                <p className="text-xs text-muted mb-2">
                   Staff-only deliberation. Never visible to the applicant.
                 </p>
                 <form onSubmit={handleNoteSave} className="flex flex-col gap-2 mb-3">
                   <select
                     value={noteKind}
                     onChange={(e) => setNoteKind(e.target.value)}
-                    className="p-2 border rounded-sm text-xs"
+                    className="p-2 border rounded-md text-xs"
                     aria-label="Note kind"
                   >
                     {REVIEW_KIND_LIST.map((k) => (
@@ -681,21 +681,21 @@ function ApplicationDetail() {
                     onChange={(e) => setNoteFindings(e.target.value)}
                     rows="2"
                     placeholder="Findings..."
-                    className="p-2 border rounded-sm text-xs"
+                    className="p-2 border rounded-md text-xs"
                   />
                   <input
                     type="text"
                     value={noteRecommendation}
                     onChange={(e) => setNoteRecommendation(e.target.value)}
                     placeholder="Recommendation (optional)"
-                    className="p-2 border rounded-sm text-xs"
+                    className="p-2 border rounded-md text-xs"
                   />
                   {noteError && <p className="text-red-500 text-xs">{noteError}</p>}
                   <div className="flex gap-2">
                     <button
                       type="submit"
                       disabled={noteSaving}
-                      className="px-3 py-2 bg-gray-800 text-white rounded-sm text-xs hover:bg-opacity-80 disabled:opacity-60"
+                      className="px-3 py-2 bg-slate-800 text-white rounded-md text-xs hover:bg-opacity-80 disabled:opacity-60"
                     >
                       {noteSaving ? "Saving..." : editingNoteId ? "Update Note" : "Add Note"}
                     </button>
@@ -707,7 +707,7 @@ function ApplicationDetail() {
                           setNoteFindings("");
                           setNoteRecommendation("");
                         }}
-                        className="px-3 py-2 bg-gray-200 rounded-sm text-xs hover:bg-gray-300"
+                        className="px-3 py-2 bg-line rounded-md text-xs hover:bg-line-strong"
                       >
                         Cancel
                       </button>
@@ -715,12 +715,12 @@ function ApplicationDetail() {
                   </div>
                 </form>
                 <ul className="flex flex-col gap-2">
-                  {notes.length === 0 && <li className="text-xs text-gray-500">No internal notes yet.</li>}
+                  {notes.length === 0 && <li className="text-xs text-muted">No internal notes yet.</li>}
                   {notes.map((n) => (
-                    <li key={n.id} className="text-xs border-l-2 border-gray-300 pl-2">
+                    <li key={n.id} className="text-xs border-l-2 border-line-strong pl-2">
                       <p className="font-medium">{n.kind}</p>
-                      <p className="text-gray-700">{n.findings}</p>
-                      {n.recommendation && <p className="text-gray-600">→ {n.recommendation}</p>}
+                      <p className="text-slate-700">{n.findings}</p>
+                      {n.recommendation && <p className="text-slate-600">→ {n.recommendation}</p>}
                       <div className="flex gap-2 mt-1">
                         <button
                           onClick={() => {
@@ -745,26 +745,26 @@ function ApplicationDetail() {
               </section>
               )}
 
-              <section className="bg-white p-4 rounded-sm shadow">
+              <section className="bg-white p-4 rounded-md shadow">
                 <h2 className="font-bold text-sm mb-2">History</h2>
                 {app.submittedAt && (
-                  <p className="text-xs text-gray-600">Submitted: {formatDateTimeSafe(toDateSafe(app.submittedAt))}</p>
+                  <p className="text-xs text-slate-600">Submitted: {formatDateTimeSafe(toDateSafe(app.submittedAt))}</p>
                 )}
                 {app.decidedAt && (
-                  <p className="text-xs text-gray-600">
+                  <p className="text-xs text-slate-600">
                     Decided ({app.decision}): {formatDateTimeSafe(toDateSafe(app.decidedAt))}
                   </p>
                 )}
-                {app.decisionNotes && <p className="text-xs text-gray-600 mt-1">Notes: {app.decisionNotes}</p>}
+                {app.decisionNotes && <p className="text-xs text-slate-600 mt-1">Notes: {app.decisionNotes}</p>}
                 <ul className="mt-3 flex flex-col gap-2">
-                  {events.length === 0 && <li className="text-xs text-gray-500">No review events yet.</li>}
+                  {events.length === 0 && <li className="text-xs text-muted">No review events yet.</li>}
                   {events.map((ev) => (
-                    <li key={ev.id} className="text-xs border-l-2 border-gray-200 pl-2">
+                    <li key={ev.id} className="text-xs border-l-2 border-line pl-2">
                       <p className="font-medium">
                         {ev.from} → {ev.to}
                       </p>
-                      {ev.note && <p className="text-gray-600">{ev.note}</p>}
-                      <p className="text-gray-400">{formatDateTimeSafe(toDateSafe(ev.createdAt))}</p>
+                      {ev.note && <p className="text-slate-600">{ev.note}</p>}
+                      <p className="text-slate-400">{formatDateTimeSafe(toDateSafe(ev.createdAt))}</p>
                     </li>
                   ))}
                 </ul>

@@ -99,34 +99,34 @@ function IncubationStatusPanel({ group, groupId, actorId, canManage, accentColor
     <div className="mt-2 w-full">
       <h3 className="font-bold text-lg mb-2">Incubation Status</h3>
 
-      <div className="bg-white border border-gray-200 rounded-sm p-4 mb-3">
+      <div className="bg-white border border-line rounded-md p-4 mb-3">
         <p className="text-sm">
           <span className="font-medium">Current state: </span>
           {current}
           {!group?.incubateeStatus && (
-            <span className="ml-2 text-xs text-gray-500">(legacy record — assumed Active)</span>
+            <span className="ml-2 text-xs text-muted">(legacy record — assumed Active)</span>
           )}
         </p>
         {group?.incubationStartDate && (
-          <p className="text-xs text-gray-600 mt-1">
+          <p className="text-xs text-slate-600 mt-1">
             Period: {formatDateSafe(group.incubationStartDate)}
             {" → "}
             {group.incubationExpectedEndDate ? formatDateSafe(group.incubationExpectedEndDate) : "open-ended"}
           </p>
         )}
-        {group?.objectives && <p className="text-xs text-gray-600 mt-1">Objectives: {group.objectives}</p>}
+        {group?.objectives && <p className="text-xs text-slate-600 mt-1">Objectives: {group.objectives}</p>}
         {group?.applicationId && (
-          <p className="text-xs text-gray-500 mt-1">Onboarded from a reviewed application (see history).</p>
+          <p className="text-xs text-muted mt-1">Onboarded from a reviewed application (see history).</p>
         )}
         {isTerminal && (
-          <p className="text-xs mt-2 p-2 rounded-sm bg-gray-100 border border-gray-200">
+          <p className="text-xs mt-2 p-2 rounded-md bg-surface-hover border border-line">
             This lifecycle is closed. Records below are kept for alumni tracking — nothing was deleted.
           </p>
         )}
       </div>
 
       {canManage && next.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-sm p-4 mb-3">
+        <div className="bg-white border border-line rounded-md p-4 mb-3">
           <h4 className="font-medium text-sm mb-2">Change state</h4>
           <div className="flex flex-wrap gap-2">
             {next.map((to) => (
@@ -134,7 +134,7 @@ function IncubationStatusPanel({ group, groupId, actorId, canManage, accentColor
                 key={to}
                 onClick={() => handleMove(to)}
                 disabled={saving}
-                className="px-3 py-2 border border-gray-300 rounded-sm text-xs hover:bg-gray-100 disabled:opacity-60"
+                className="px-3 py-2 border border-line-strong rounded-md text-xs hover:bg-surface-hover disabled:opacity-60"
               >
                 {TERMINAL_OUTCOMES.includes(to) ? `Record: ${to}` : `Move to ${to}`}
               </button>
@@ -146,22 +146,22 @@ function IncubationStatusPanel({ group, groupId, actorId, canManage, accentColor
 
       <h4 className="font-medium text-sm mb-1">Outcome history ({outcomes.length})</h4>
       {loading ? (
-        <p className="text-gray-500 text-sm">Loading outcomes...</p>
+        <p className="text-muted text-sm">Loading outcomes...</p>
       ) : error ? (
         <p className="text-red-500 text-sm">{error}</p>
       ) : outcomes.length === 0 ? (
-        <p className="text-gray-500 text-sm">No outcomes recorded yet.</p>
+        <p className="text-muted text-sm">No outcomes recorded yet.</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {outcomes.map((o) => (
-            <li key={o.id} className="bg-white border border-gray-200 rounded-sm p-3">
-              <p className="font-medium text-sm text-gray-800">
+            <li key={o.id} className="bg-white border border-line rounded-md p-3">
+              <p className="font-medium text-sm text-slate-800">
                 {o.type}
                 {o.date ? ` · ${formatDateSafe(o.date)}` : ""}
               </p>
-              {o.reason && <p className="text-xs text-gray-600 mt-1">Reason: {o.reason}</p>}
+              {o.reason && <p className="text-xs text-slate-600 mt-1">Reason: {o.reason}</p>}
               {o.achievements && (
-                <p className="text-xs text-gray-600 mt-1">
+                <p className="text-xs text-slate-600 mt-1">
                   <span className="font-medium">Achievements: </span>
                   {o.achievements}
                 </p>
@@ -175,7 +175,7 @@ function IncubationStatusPanel({ group, groupId, actorId, canManage, accentColor
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4 z-50">
           <form onSubmit={handleOutcomeSubmit} className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
             <h2 className="text-lg font-bold mb-1 text-center">Record outcome: {pendingTo}</h2>
-            <p className="text-xs text-gray-500 text-center mb-4">
+            <p className="text-xs text-muted text-center mb-4">
               This closes (or continues) the lifecycle with a permanent record.
             </p>
             <label className="block text-sm font-medium mb-1" htmlFor="oc-date">
@@ -186,7 +186,7 @@ function IncubationStatusPanel({ group, groupId, actorId, canManage, accentColor
               type="date"
               value={outcomeForm.date}
               onChange={(e) => setOutcomeForm((p) => ({ ...p, date: e.target.value }))}
-              className="w-full p-2 border rounded-sm text-sm mb-2"
+              className="w-full p-2 border rounded-md text-sm mb-2"
             />
             <label className="block text-sm font-medium mb-1" htmlFor="oc-reason">
               Reason / context <span className="text-red-500">*</span>
@@ -196,7 +196,7 @@ function IncubationStatusPanel({ group, groupId, actorId, canManage, accentColor
               value={outcomeForm.reason}
               onChange={(e) => setOutcomeForm((p) => ({ ...p, reason: e.target.value }))}
               rows="3"
-              className="w-full p-2 border rounded-sm text-sm mb-2"
+              className="w-full p-2 border rounded-md text-sm mb-2"
               placeholder="Final assessment summary, exit reason, continuation terms..."
             />
             <label className="block text-sm font-medium mb-1" htmlFor="oc-ach">
@@ -207,7 +207,7 @@ function IncubationStatusPanel({ group, groupId, actorId, canManage, accentColor
               value={outcomeForm.achievements}
               onChange={(e) => setOutcomeForm((p) => ({ ...p, achievements: e.target.value }))}
               rows="2"
-              className="w-full p-2 border rounded-sm text-sm mb-3"
+              className="w-full p-2 border rounded-md text-sm mb-3"
               placeholder="Completed milestones, products, funding, jobs..."
             />
             {formError && <p className="text-red-500 text-sm mb-2">{formError}</p>}
@@ -215,14 +215,14 @@ function IncubationStatusPanel({ group, groupId, actorId, canManage, accentColor
               <button
                 type="button"
                 onClick={() => setPendingTo(null)}
-                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-sm text-sm hover:bg-gray-400"
+                className="rounded-md bg-surface-hover px-4 py-2 text-sm text-ink transition-colors hover:bg-line"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className={`${accent} px-4 py-2 text-white rounded-sm text-sm hover:bg-opacity-80 disabled:opacity-60`}
+                className={`${accent} px-4 py-2 text-white rounded-md text-sm hover:bg-opacity-80 disabled:opacity-60`}
               >
                 {saving ? "Recording..." : `Record ${pendingTo}`}
               </button>

@@ -345,13 +345,13 @@ const WorkplanTable = ({ workplan, groupMembers, handleAddTask, handleEditTask, 
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 bg-gray-500 text-white text-sm rounded-sm hover:bg-gray-600 transition"
+                  className="px-4 py-2 bg-muted text-white text-sm rounded-md hover:bg-slate-600 transition"
                 >
                   Close
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-accent text-white text-sm rounded-sm hover:bg-opacity-80 transition"
+                  className="px-4 py-2 bg-accent text-white text-sm rounded-md hover:bg-opacity-80 transition"
                 >
                   {isEditing ? "Update Task" : "Add Task"}
                 </button>

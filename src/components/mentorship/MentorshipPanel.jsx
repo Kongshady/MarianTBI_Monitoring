@@ -205,7 +205,7 @@ function MentorshipPanel({ groupId, actorId, canAssign, accentColor }) {
         {canRecord && (
           <button
             onClick={openSessionCreate}
-            className={`${accent} text-white px-4 py-2 text-xs rounded-sm hover:bg-opacity-80 transition`}
+            className={`${accent} text-white px-4 py-2 text-xs rounded-md hover:bg-opacity-80 transition`}
           >
             + Record Session
           </button>
@@ -213,22 +213,22 @@ function MentorshipPanel({ groupId, actorId, canAssign, accentColor }) {
       </div>
 
       {loading ? (
-        <p className="text-gray-500 text-sm">Loading mentorship...</p>
+        <p className="text-muted text-sm">Loading mentorship...</p>
       ) : error ? (
         <p className="text-red-500 text-sm">{error}</p>
       ) : (
         <>
           <h4 className="font-medium text-sm mb-1">Mentor assignments ({activeAssignments.length} active)</h4>
           {assignments.length === 0 ? (
-            <p className="text-gray-500 text-sm mb-3">No mentors assigned yet.</p>
+            <p className="text-muted text-sm mb-3">No mentors assigned yet.</p>
           ) : (
             <ul className="flex flex-col gap-2 mb-4">
               {assignments.map((a) => (
-                <li key={a.id} className="bg-white border border-gray-200 rounded-sm p-3 text-sm">
+                <li key={a.id} className="bg-white border border-line rounded-md p-3 text-sm">
                   <div className="flex flex-wrap justify-between items-center gap-2">
                     <div>
-                      <p className="font-medium text-gray-800">{a.mentorName || "Mentor"}</p>
-                      <p className="text-xs text-gray-500">
+                      <p className="font-medium text-slate-800">{a.mentorName || "Mentor"}</p>
+                      <p className="text-xs text-muted">
                         Since {a.startedAt ? formatDateSafe(a.startedAt) : "N/A"}
                         {a.endedAt ? ` · Ended ${formatDateSafe(a.endedAt)}` : " · Active"}
                       </p>
@@ -236,7 +236,7 @@ function MentorshipPanel({ groupId, actorId, canAssign, accentColor }) {
                     {canAssign && !a.endedAt && (
                       <button
                         onClick={() => setPendingEnd(a)}
-                        className="px-2 py-1 border border-gray-300 rounded-sm text-xs hover:bg-gray-100"
+                        className="px-2 py-1 border border-line-strong rounded-md text-xs hover:bg-surface-hover"
                       >
                         End assignment
                       </button>
@@ -257,7 +257,7 @@ function MentorshipPanel({ groupId, actorId, canAssign, accentColor }) {
                   id="mentor-select"
                   value={mentorId}
                   onChange={(e) => setMentorId(e.target.value)}
-                  className="w-full p-2 border rounded-sm text-sm"
+                  className="w-full p-2 border rounded-md text-sm"
                 >
                   <option value="">Select mentor</option>
                   {mentors.map((m) => (
@@ -270,7 +270,7 @@ function MentorshipPanel({ groupId, actorId, canAssign, accentColor }) {
               <button
                 type="submit"
                 disabled={assigning}
-                className={`${accent} px-4 py-2 text-white rounded-sm text-xs hover:bg-opacity-80 disabled:opacity-60`}
+                className={`${accent} px-4 py-2 text-white rounded-md text-xs hover:bg-opacity-80 disabled:opacity-60`}
               >
                 {assigning ? "Assigning..." : "Assign"}
               </button>
@@ -280,28 +280,28 @@ function MentorshipPanel({ groupId, actorId, canAssign, accentColor }) {
 
           <h4 className="font-medium text-sm mb-1">Sessions ({sessions.length})</h4>
           {sessions.length === 0 ? (
-            <p className="text-gray-500 text-sm">No mentoring sessions recorded yet.</p>
+            <p className="text-muted text-sm">No mentoring sessions recorded yet.</p>
           ) : (
             <ul className="flex flex-col gap-2">
               {sessions.map((s) => (
-                <li key={s.id} className="bg-white border border-gray-200 rounded-sm p-3">
+                <li key={s.id} className="bg-white border border-line rounded-md p-3">
                   <div className="flex flex-wrap justify-between items-start gap-2">
                     <div className="min-w-0">
-                      <p className="font-medium text-sm text-gray-800">{s.topic}</p>
-                      <p className="text-xs text-gray-500">
+                      <p className="font-medium text-sm text-slate-800">{s.topic}</p>
+                      <p className="text-xs text-muted">
                         {s.date ? formatDateSafe(s.date) : "No date"}
                         {s.mentorName ? ` · ${s.mentorName}` : ""}
                         {s.nextDate ? ` · Next: ${formatDateSafe(s.nextDate)}` : ""}
                       </p>
-                      {s.discussion && <p className="text-xs text-gray-600 mt-1">{s.discussion}</p>}
+                      {s.discussion && <p className="text-xs text-slate-600 mt-1">{s.discussion}</p>}
                       {s.recommendations && (
-                        <p className="text-xs text-gray-600 mt-1">
+                        <p className="text-xs text-slate-600 mt-1">
                           <span className="font-medium">Recommendations: </span>
                           {s.recommendations}
                         </p>
                       )}
                       {s.followUps && (
-                        <p className="text-xs text-gray-600 mt-1">
+                        <p className="text-xs text-slate-600 mt-1">
                           <span className="font-medium">Follow-ups: </span>
                           {s.followUps}
                         </p>
@@ -311,14 +311,14 @@ function MentorshipPanel({ groupId, actorId, canAssign, accentColor }) {
                       <div className="flex gap-1">
                         <button
                           onClick={() => openSessionEdit(s)}
-                          className="px-2 py-1 border border-gray-300 rounded-sm text-xs hover:bg-gray-100"
+                          className="px-2 py-1 border border-line-strong rounded-md text-xs hover:bg-surface-hover"
                         >
                           Edit
                         </button>
                         {canAssign && (
                           <button
                             onClick={() => setPendingSessionDelete(s)}
-                            className="px-2 py-1 bg-red-500 text-white rounded-sm text-xs hover:bg-opacity-80"
+                            className="px-2 py-1 bg-red-500 text-white rounded-md text-xs hover:bg-opacity-80"
                           >
                             Delete
                           </button>
@@ -351,7 +351,7 @@ function MentorshipPanel({ groupId, actorId, canAssign, accentColor }) {
                   type="date"
                   value={sessionForm.date}
                   onChange={(e) => setSessionForm((p) => ({ ...p, date: e.target.value }))}
-                  className="w-full p-2 border rounded-sm text-sm"
+                  className="w-full p-2 border rounded-md text-sm"
                 />
               </div>
               <div>
@@ -363,7 +363,7 @@ function MentorshipPanel({ groupId, actorId, canAssign, accentColor }) {
                   type="date"
                   value={sessionForm.nextDate}
                   onChange={(e) => setSessionForm((p) => ({ ...p, nextDate: e.target.value }))}
-                  className="w-full p-2 border rounded-sm text-sm"
+                  className="w-full p-2 border rounded-md text-sm"
                 />
               </div>
             </div>
@@ -375,7 +375,7 @@ function MentorshipPanel({ groupId, actorId, canAssign, accentColor }) {
               type="text"
               value={sessionForm.topic}
               onChange={(e) => setSessionForm((p) => ({ ...p, topic: e.target.value }))}
-              className="w-full p-2 border rounded-sm text-sm mb-2"
+              className="w-full p-2 border rounded-md text-sm mb-2"
             />
             <label className="block text-sm font-medium mb-1" htmlFor="sess-discussion">
               Discussion
@@ -385,7 +385,7 @@ function MentorshipPanel({ groupId, actorId, canAssign, accentColor }) {
               value={sessionForm.discussion}
               onChange={(e) => setSessionForm((p) => ({ ...p, discussion: e.target.value }))}
               rows="2"
-              className="w-full p-2 border rounded-sm text-sm mb-2"
+              className="w-full p-2 border rounded-md text-sm mb-2"
             />
             <label className="block text-sm font-medium mb-1" htmlFor="sess-rec">
               Recommendations
@@ -395,7 +395,7 @@ function MentorshipPanel({ groupId, actorId, canAssign, accentColor }) {
               value={sessionForm.recommendations}
               onChange={(e) => setSessionForm((p) => ({ ...p, recommendations: e.target.value }))}
               rows="2"
-              className="w-full p-2 border rounded-sm text-sm mb-2"
+              className="w-full p-2 border rounded-md text-sm mb-2"
             />
             <label className="block text-sm font-medium mb-1" htmlFor="sess-follow">
               Follow-up actions
@@ -405,21 +405,21 @@ function MentorshipPanel({ groupId, actorId, canAssign, accentColor }) {
               value={sessionForm.followUps}
               onChange={(e) => setSessionForm((p) => ({ ...p, followUps: e.target.value }))}
               rows="2"
-              className="w-full p-2 border rounded-sm text-sm mb-3"
+              className="w-full p-2 border rounded-md text-sm mb-3"
             />
             {sessionError && <p className="text-red-500 text-sm mb-2">{sessionError}</p>}
             <div className="flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setShowSessionForm(false)}
-                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-sm text-sm hover:bg-gray-400"
+                className="rounded-md bg-surface-hover px-4 py-2 text-sm text-ink transition-colors hover:bg-line"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={sessionSaving}
-                className={`${accent} px-4 py-2 text-white rounded-sm text-sm hover:bg-opacity-80 disabled:opacity-60`}
+                className={`${accent} px-4 py-2 text-white rounded-md text-sm hover:bg-opacity-80 disabled:opacity-60`}
               >
                 {sessionSaving ? "Saving..." : editingSessionId ? "Update" : "Save"}
               </button>

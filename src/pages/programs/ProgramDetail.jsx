@@ -305,7 +305,7 @@ function ProgramDetail() {
                     <button
                       type="submit"
                       disabled={saving}
-                      className="px-4 py-2 bg-accent text-white rounded-sm text-sm hover:bg-opacity-80 disabled:opacity-60"
+                      className="px-4 py-2 bg-accent text-white rounded-md text-sm hover:bg-opacity-80 disabled:opacity-60"
                     >
                       {saving ? "Saving..." : "Save Changes"}
                     </button>
@@ -313,7 +313,7 @@ function ProgramDetail() {
                       <button
                         type="button"
                         onClick={handleDelete}
-                        className="px-4 py-2 bg-red-500 text-white rounded-sm text-sm hover:bg-opacity-80"
+                        className="px-4 py-2 bg-red-500 text-white rounded-md text-sm hover:bg-opacity-80"
                       >
                         Delete Program
                       </button>
@@ -321,7 +321,7 @@ function ProgramDetail() {
                   </div>
                 </form>
               ) : (
-                <div className="mt-4 text-sm text-gray-700 flex flex-col gap-2">
+                <div className="mt-4 text-sm text-slate-700 flex flex-col gap-2">
                   {program.description && <p>{program.description}</p>}
                   {program.objectives && (
                     <p>

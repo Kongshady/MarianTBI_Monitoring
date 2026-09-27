@@ -1,6 +1,6 @@
 function CustomButton({ text, className }) {
     return (
-        <button className={`p-2 pl-9 pr-9 rounded-sm text-xs shadow-lg font-semibold tracking-wide ${className}`}>
+        <button className={`p-2 pl-9 pr-9 rounded-md text-xs shadow-lg font-semibold tracking-wide ${className}`}>
             {text}
         </button>
     );

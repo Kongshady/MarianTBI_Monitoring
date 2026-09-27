@@ -260,7 +260,7 @@ function AdViewGroups() {
             {staffView && (
               <button
                 onClick={() => setIsEditOpen(true)}
-                className="px-4 py-2 bg-primary-color text-white rounded text-sm font-medium hover:bg-primary-deep transition inline-flex items-center gap-2"
+                className="px-4 py-2 bg-accent text-white rounded text-sm font-medium transition-colors hover:brightness-110 inline-flex items-center gap-2"
               >
                 <MdEdit aria-hidden="true" />
                 Edit startup
@@ -300,7 +300,7 @@ function AdViewGroups() {
                 groupId={groupId}
                 actorId={auth.currentUser?.uid}
                 canManage={staffView && canManageIncubationStatus({ appRole: viewerRole })}
-                accentColor="bg-primary-color"
+                accentColor="bg-accent"
               />
             </section>
           </div>
@@ -467,7 +467,7 @@ function AdViewGroups() {
             actorId={auth.currentUser?.uid}
             canManage={staffView}
             canDelete={staffView && canDeleteMilestone({ appRole: viewerRole })}
-            accentColor="bg-primary-color"
+            accentColor="bg-accent"
             onCount={setMilestoneCounts}
           />
         )}
@@ -478,7 +478,7 @@ function AdViewGroups() {
             groupId={groupId}
             actorId={auth.currentUser?.uid}
             canAssign={staffView && canAssignMentors({ appRole: viewerRole })}
-            accentColor="bg-primary-color"
+            accentColor="bg-accent"
           />
         )}
 
@@ -489,7 +489,7 @@ function AdViewGroups() {
             actorId={auth.currentUser?.uid}
             canSubmit={false}
             canReview={staffView && canReviewReports({ appRole: viewerRole })}
-            accentColor="bg-primary-color"
+            accentColor="bg-accent"
             onCount={setReportCount}
           />
         )}
@@ -514,7 +514,7 @@ function AdViewGroups() {
             actorId={auth.currentUser?.uid}
             canManage={staffView && canManageAssessments({ appRole: viewerRole })}
             canDelete={canDeleteAssessment({ appRole: viewerRole })}
-            accentColor="bg-primary-color"
+            accentColor="bg-accent"
           />
         )}
 

@@ -1,7 +1,21 @@
-import { useEffect } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "./alert-dialog.jsx";
 
 // Accessible confirmation dialog for destructive or final actions.
 // Cancel is the default focus — destructive choices need a deliberate tab.
+//
+// Now backed by Radix AlertDialog, which supplies the focus trap, focus
+// restoration on close, Escape handling and aria-modal wiring that the
+// previous hand-rolled implementation was missing. The public API is
+// unchanged, so every call site keeps working.
 function ConfirmDialog({
   open,
   title,
@@ -13,54 +27,30 @@ function ConfirmDialog({
   onConfirm,
   onCancel,
 }) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e) => {
-      if (e.key === "Escape") onCancel();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onCancel]);
-
-  if (!open) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
-      role="alertdialog"
-      aria-modal="true"
-      aria-label={title}
-      onClick={onCancel}
-    >
-      <div
-        className="bg-white rounded shadow-lg w-full max-w-sm p-6"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="text-base font-semibold text-slate-900">{title}</h2>
-        {description && <p className="text-sm text-muted mt-1">{description}</p>}
-        <div className="flex justify-end gap-2 mt-5">
-          <button
-            type="button"
-            onClick={onCancel}
-            autoFocus
+    <AlertDialog open={open} onOpenChange={(next) => !next && onCancel?.()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          {description && <AlertDialogDescription>{description}</AlertDialogDescription>}
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy}>{cancelLabel}</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(e) => {
+              // Keep the dialog mounted while the async action runs so the
+              // busy state stays visible instead of the panel vanishing.
+              e.preventDefault();
+              onConfirm?.();
+            }}
+            variant={danger ? "danger" : "brand"}
             disabled={busy}
-            className="px-4 py-2 bg-slate-100 text-slate-800 rounded text-sm font-medium hover:bg-slate-200 transition disabled:opacity-60"
-          >
-            {cancelLabel}
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={busy}
-            className={`px-4 py-2 rounded text-sm font-medium text-white transition disabled:opacity-60 ${
-              danger ? "bg-red-600 hover:bg-red-700" : "bg-primary-color hover:bg-primary-deep"
-            }`}
           >
             {busy ? "Working..." : confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

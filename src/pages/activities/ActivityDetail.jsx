@@ -327,7 +327,7 @@ function ActivityDetail() {
                     <button
                       type="submit"
                       disabled={saving}
-                      className="px-4 py-2 bg-accent text-white rounded-sm text-sm hover:bg-opacity-80 disabled:opacity-60"
+                      className="px-4 py-2 bg-accent text-white rounded-md text-sm hover:bg-opacity-80 disabled:opacity-60"
                     >
                       {saving ? "Saving..." : "Save Changes"}
                     </button>
@@ -335,7 +335,7 @@ function ActivityDetail() {
                       <button
                         type="button"
                         onClick={handleDelete}
-                        className="px-4 py-2 bg-red-500 text-white rounded-sm text-sm hover:bg-opacity-80"
+                        className="px-4 py-2 bg-red-500 text-white rounded-md text-sm hover:bg-opacity-80"
                       >
                         Delete Activity
                       </button>
@@ -343,7 +343,7 @@ function ActivityDetail() {
                   </div>
                 </form>
               ) : (
-                activity.description && <p className="mt-4 text-sm text-gray-700">{activity.description}</p>
+                activity.description && <p className="mt-4 text-sm text-slate-700">{activity.description}</p>
               )}
             </section>
 

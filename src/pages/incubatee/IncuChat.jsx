@@ -279,7 +279,7 @@ function IncuChat() {
                         <div key={message.id} className="flex flex-col">
                           {/* Display the time or date interval */}
                           {shouldDisplayTime && (
-                            <div className="text-center text-xs text-gray-500 my-2">
+                            <div className="text-center text-xs text-muted my-2">
                               {currentMessageTime.toLocaleDateString("en-US", {
                                 weekday: "short",
                                 month: "short",
@@ -354,7 +354,7 @@ function IncuChat() {
                           {message.senderId === auth.currentUser.uid &&
                             message.seen &&
                             index === messages.length - 1 && (
-                              <span className="text-xs text-gray-500 self-end mt-1">
+                              <span className="text-xs text-muted self-end mt-1">
                                 Seen
                               </span>
                             )}

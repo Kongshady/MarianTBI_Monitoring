@@ -288,7 +288,7 @@ function EmChat() {
                                                 <div key={message.id} className="flex flex-col">
                                                     {/* Display the time or date interval */}
                                                     {shouldDisplayTime && (
-                                                        <div className="text-center text-xs text-gray-500 my-2">
+                                                        <div className="text-center text-xs text-muted my-2">
                                                             {currentMessageTime.toLocaleDateString("en-US", {
                                                                 weekday: "short",
                                                                 month: "short",
@@ -340,14 +340,14 @@ function EmChat() {
                                                                             className="absolute right-0 mt-2 w-48 bg-white border rounded shadow-lg z-10"
                                                                         >
                                                                             <button
-                                                                                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                                                                className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-surface-hover"
                                                                                 onClick={() => handleEditMessage(message)}
                                                                                 disabled={isEditDisabled(message.timestamp)}
                                                                             >
                                                                                 Edit
                                                                             </button>
                                                                             <button
-                                                                                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                                                                className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-surface-hover"
                                                                                 onClick={() => handleDeleteMessage(message.id)}
                                                                             >
                                                                                 Delete
@@ -363,7 +363,7 @@ function EmChat() {
                                                     {message.senderId === auth.currentUser.uid &&
                                                         message.seen &&
                                                         index === messages.length - 1 && (
-                                                            <span className="text-xs text-gray-500 self-end mt-1">
+                                                            <span className="text-xs text-muted self-end mt-1">
                                                                 Seen
                                                             </span>
                                                         )}

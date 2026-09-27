@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import AppShell from "../../components/layout/AppShell.jsx";
 import StatusBadge from "../../components/ui/StatusBadge.jsx";
-import { SectionTitle } from "../../components/ui/PageHeader.jsx";
+import { SectionHeader } from "../../components/ui/PageHeader.jsx";
+import { ActionQueue, MetricRow } from "../../components/ui/dashboard.jsx";
 import { EmptyState, ErrorState, PageSkeleton } from "../../components/ui/states.jsx";
 import { auth, db } from "../../config/marian-config.js";
 import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
@@ -109,112 +110,186 @@ function EmDashboard() {
     }
   });
 
+  const attention = [
+    {
+      label: "Requests awaiting triage in your startups",
+      count: needsTriage.length,
+      to: null,
+      tone: "warning",
+    },
+    {
+      label: "Overdue milestones in your startups",
+      count: overdue.length,
+      to: null,
+      tone: "critical",
+    },
+  ];
+
+  const firstName = userName?.split(" ")[0] || "there";
+
   return (
     <AppShell role={role} userName={userName}>
-      <h1 className="text-[30px] leading-tight font-semibold tracking-tight text-slate-900">
-        Good day, {userName?.split(" ")[0] || "there"}.
-      </h1>
-      <p className="text-sm text-muted mt-1 mb-6">
-        Your assigned startups, requests needing triage, and upcoming activities.
-      </p>
+      <header className="mb-6 sm:mb-7">
+        <h1 className="text-[22px] font-semibold leading-tight tracking-tight text-slate-900 sm:text-[26px] lg:text-[30px]">
+          Good day, {firstName}.
+        </h1>
+        <p className="mt-1 max-w-2xl text-sm text-muted">
+          Your assigned startups, requests needing triage, and upcoming activities.
+        </p>
+      </header>
 
       {loading ? (
         <PageSkeleton rows={8} />
       ) : error ? (
         <ErrorState message={error} onRetry={() => window.location.reload()} />
       ) : (
-        <>
-          <SectionTitle hint="Requests waiting on you, and milestones past due.">Needs your attention</SectionTitle>
-          <ul className="bg-white border border-line rounded divide-y divide-line mb-8">
-            <li className="flex items-center gap-3 px-4 py-3">
-              <span className={`w-2 h-2 rounded-full shrink-0 ${needsTriage.length > 0 ? "bg-amber-500" : "bg-slate-300"}`} aria-hidden="true" />
-              <span className="text-2xl font-semibold text-slate-900 tabular-nums w-10">{needsTriage.length}</span>
-              <span className="flex-1 text-sm text-slate-700">Requests awaiting triage in your startups</span>
-            </li>
-            <li className="flex items-center gap-3 px-4 py-3">
-              <span className={`w-2 h-2 rounded-full shrink-0 ${overdue.length > 0 ? "bg-red-500" : "bg-slate-300"}`} aria-hidden="true" />
-              <span className="text-2xl font-semibold text-slate-900 tabular-nums w-10">{overdue.length}</span>
-              <span className="flex-1 text-sm text-slate-700">Overdue milestones in your startups</span>
-            </li>
-          </ul>
+        <div className="space-y-8">
+          <section aria-labelledby="sec-attention">
+            <SectionHeader hint="Requests waiting on you, and milestones past due.">
+              <span id="sec-attention">Needs your attention</span>
+            </SectionHeader>
+            <ActionQueue items={attention} className="mt-3.5" />
+          </section>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <section className="bg-white border border-line rounded p-4">
-              <h2 className="text-sm font-semibold text-slate-900 mb-1">My startups ({groups.length})</h2>
-              <p className="text-xs text-muted mb-3">Open requests and status per startup.</p>
-              {groups.length === 0 ? (
-                <EmptyState title="No startups assigned" description="Startups assigned to you will appear here." />
-              ) : (
-                <ul className="flex flex-col">
-                  {[...groups]
-                    .sort((a, b) => (openByGroup[b.id] || 0) - (openByGroup[a.id] || 0))
-                    .map((g) => (
-                      <li key={g.id} className="flex items-center gap-3 py-2 border-b border-line last:border-b-0">
-                        <span className="flex-1 min-w-0">
-                          <Link to={`/employee/view-group/${g.id}`} className="text-sm font-medium text-slate-900 hover:text-accent">
-                            {g.name}
+          <section aria-labelledby="sec-portfolio">
+            <SectionHeader hint="Your caseload, and the live count of open work behind it.">
+              <span id="sec-portfolio">Your portfolio</span>
+            </SectionHeader>
+            <MetricRow
+              className="mt-3.5"
+              items={[
+                { label: "Assigned startups", value: groups.length },
+                { label: "Open requests", value: needsTriage.length },
+                { label: "Overdue milestones", value: overdue.length },
+                { label: "Milestones tracked", value: myMilestones.length },
+              ]}
+            />
+          </section>
+
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+            <section aria-labelledby="sec-startups">
+              <SectionHeader
+                hint="Sorted by how much open work each startup is carrying."
+                count={groups.length}
+              >
+                <span id="sec-startups">My startups</span>
+              </SectionHeader>
+              <div className="mt-3.5 overflow-hidden rounded-lg border border-line bg-white">
+                {groups.length === 0 ? (
+                  <EmptyState
+                    title="No startups assigned"
+                    description="Startups assigned to you will appear here."
+                    className="py-6"
+                  />
+                ) : (
+                  <ul className="divide-y divide-line">
+                    {[...groups]
+                      .sort((a, b) => (openByGroup[b.id] || 0) - (openByGroup[a.id] || 0))
+                      .map((g) => (
+                        <li key={g.id}>
+                          <Link
+                            to={`/employee/view-group/${g.id}`}
+                            className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover"
+                          >
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium text-slate-900">
+                                {g.name}
+                              </span>
+                              <span className="block text-xs text-muted">
+                                {openByGroup[g.id] || 0} open{" "}
+                                {openByGroup[g.id] === 1 ? "request" : "requests"}
+                              </span>
+                            </span>
+                            <StatusBadge status={g.incubateeStatus || "Active"} />
                           </Link>
-                          <span className="block text-xs text-muted">
-                            {openByGroup[g.id] || 0} open requests
-                          </span>
-                        </span>
-                        <StatusBadge status={g.incubateeStatus || "Active"} />
-                      </li>
-                    ))}
-                </ul>
-              )}
+                        </li>
+                      ))}
+                  </ul>
+                )}
+              </div>
             </section>
 
-            <section className="bg-white border border-line rounded p-4">
-              <h2 className="text-sm font-semibold text-slate-900 mb-1">Upcoming activities</h2>
-              <p className="text-xs text-muted mb-3">Next 5 scheduled.</p>
-              {upcoming.length === 0 ? (
-                <p className="text-sm text-muted">Nothing scheduled.</p>
-              ) : (
-                <ul className="flex flex-col">
-                  {upcoming.map((a) => (
-                    <li key={a.id} className="flex gap-3 py-2 border-b border-line last:border-b-0">
-                      <span className="text-center shrink-0 w-11">
-                        <span className="block text-[11px] font-semibold uppercase text-muted">
-                          {toDateSafe(a.date)?.toLocaleDateString("en-US", { month: "short" })}
-                        </span>
-                        <span className="block text-lg font-semibold text-slate-900 leading-6">
-                          {toDateSafe(a.date)?.getDate()}
-                        </span>
-                      </span>
-                      <span>
-                        <Link to={`/activities/${a.id}`} className="text-sm font-medium text-slate-900 hover:text-accent">
-                          {a.title}
+            <section aria-labelledby="sec-upcoming">
+              <SectionHeader hint="Next 5 scheduled.">
+                <span id="sec-upcoming">Upcoming activities</span>
+              </SectionHeader>
+              <div className="mt-3.5">
+                {upcoming.length === 0 ? (
+                  <div className="rounded-lg border border-line bg-white">
+                    <EmptyState
+                      title="Nothing scheduled"
+                      description="Upcoming trainings and events will appear here."
+                      className="py-6"
+                    />
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-line rounded-lg border border-line bg-white">
+                    {upcoming.map((a) => (
+                      <li key={a.id}>
+                        <Link
+                          to={`/activities/${a.id}`}
+                          className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover"
+                        >
+                          <span className="w-11 shrink-0 text-center">
+                            <span className="block text-[11px] font-semibold uppercase text-muted">
+                              {toDateSafe(a.date)?.toLocaleDateString("en-US", { month: "short" })}
+                            </span>
+                            <span className="block text-lg leading-6 font-semibold text-slate-900">
+                              {toDateSafe(a.date)?.getDate()}
+                            </span>
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium text-slate-900">
+                              {a.title}
+                            </span>
+                            <span className="block truncate text-xs text-muted">
+                              {a.type}
+                              {a.location ? ` · ${a.location}` : ""}
+                            </span>
+                          </span>
                         </Link>
-                        <span className="block text-xs text-muted">
-                          {a.type}
-                          {a.location ? ` · ${a.location}` : ""}
-                        </span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {overdue.length > 0 && (
-                <div className="mt-4">
-                  <h3 className="text-sm font-semibold text-slate-900 mb-1">Overdue milestones</h3>
-                  <ul className="flex flex-col">
-                    {overdue.slice(0, 8).map((m) => (
-                      <li key={m.id} className="py-1.5 border-b border-line last:border-b-0 text-sm">
-                        <span className="font-medium text-slate-900">{m.title}</span>
-                        <span className="block text-xs text-muted">
-                          {groups.find((g) => g.id === m.groupId)?.name || "Startup"} · due{" "}
-                          {m.dueDate ? formatDateSafe(m.dueDate) : "no date"}
-                        </span>
                       </li>
                     ))}
                   </ul>
-                </div>
-              )}
+                )}
+              </div>
             </section>
           </div>
-        </>
+
+          {overdue.length > 0 && (
+            <section aria-labelledby="sec-overdue">
+              <SectionHeader
+                hint="Past their due date. Open the startup to renegotiate or complete."
+                count={overdue.length}
+              >
+                <span id="sec-overdue">Overdue milestones</span>
+              </SectionHeader>
+              <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-white">
+                {overdue.slice(0, 8).map((m) => (
+                  <li key={m.id}>
+                    <Link
+                      to={`/employee/view-group/${m.groupId}`}
+                      className="flex items-baseline gap-x-3 gap-y-0.5 px-4 py-2.5 transition-colors hover:bg-surface-hover"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-slate-900">
+                          {m.title}
+                        </span>
+                        <span className="block truncate text-xs text-muted">
+                          {groups.find((g) => g.id === m.groupId)?.name || "Startup"} · due{" "}
+                          {m.dueDate ? formatDateSafe(m.dueDate) : "no date"}
+                        </span>
+                      </span>
+                      <span className="shrink-0">
+                        <StatusBadge status="Overdue" />
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
       )}
     </AppShell>
   );

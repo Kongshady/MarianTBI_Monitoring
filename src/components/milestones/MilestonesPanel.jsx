@@ -1,5 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import ConfirmDialog from "../ui/ConfirmDialog.jsx";
+import { Button } from "../ui/button.jsx";
+import { Progress } from "../ui/progress.jsx";
+import { MetricRow } from "../ui/dashboard.jsx";
+import { SectionHeader } from "../ui/PageHeader.jsx";
+import StatusBadge from "../ui/StatusBadge.jsx";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog.jsx";
+import { InlineLoading } from "../ui/states.jsx";
 import { toast } from "../../lib/toast.js";
 import {
   MILESTONE_STATUS,
@@ -17,7 +31,7 @@ import {
 
 // Shared incubation-plan view: objectives come from the group; milestones are
 // real records with honest counts (no invented percentages).
-function MilestonesPanel({ groupId, groupObjectives, actorId, canManage, canDelete = true, accentColor, onCount }) {
+function MilestonesPanel({ groupId, groupObjectives, actorId, canManage, canDelete = true, onCount }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -27,8 +41,6 @@ function MilestonesPanel({ groupId, groupObjectives, actorId, canManage, canDele
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
-
-  const accent = accentColor || "bg-accent";
 
   useEffect(() => {
     setLoading(true);
@@ -49,6 +61,7 @@ function MilestonesPanel({ groupId, groupObjectives, actorId, canManage, canDele
   const completed = items.filter((m) => m.status === MILESTONE_STATUS.COMPLETED).length;
   const inProgress = items.filter((m) => m.status === MILESTONE_STATUS.IN_PROGRESS).length;
   const overdue = items.filter((m) => isMilestoneOverdue(m)).length;
+  const pct = items.length > 0 ? Math.round((completed / items.length) * 100) : 0;
 
   // Optional head-count for overview metrics; the panel owns its data.
   // Ref-guarded so the fresh object identity can't loop the parent.
@@ -132,180 +145,206 @@ function MilestonesPanel({ groupId, groupObjectives, actorId, canManage, canDele
 
   return (
     <div className="mt-2 w-full">
-      <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
-        <h3 className="font-bold text-lg">Incubation Plan &amp; Milestones</h3>
-        {canManage && (
-          <button
-            onClick={openCreate}
-            className={`${accent} text-white px-4 py-2 text-xs rounded-sm hover:bg-opacity-80 transition`}
-          >
-            + Add Milestone
-          </button>
-        )}
-      </div>
+      <SectionHeader
+        hint="Objectives come from the startup record. Milestones are tracked individually."
+        count={items.length}
+        action={
+          canManage ? (
+            <Button onClick={openCreate} size="sm">
+              Add milestone
+            </Button>
+          ) : null
+        }
+      >
+        Incubation plan &amp; milestones
+      </SectionHeader>
 
       {groupObjectives ? (
-        <p className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-sm p-3 mb-3">
-          <span className="font-medium text-gray-800">Plan objectives: </span>
+        <p className="mt-3.5 border-l-2 border-accent bg-accent-light px-3.5 py-2.5 text-sm leading-relaxed text-slate-700">
+          <span className="font-medium text-slate-900">Plan objectives: </span>
           {groupObjectives}
         </p>
       ) : (
-        <p className="text-xs text-gray-500 mb-3">No plan objectives recorded for this startup yet.</p>
+        <p className="mt-3.5 text-[13px] text-muted">
+          No plan objectives recorded for this startup yet.
+        </p>
       )}
 
-      <div className="flex flex-wrap gap-2 mb-3 text-center">
-        <div className="bg-blue-500 text-white p-2 rounded-sm shadow-md min-w-[110px]">
-          <p className="text-xs">Milestones</p>
-          <p className="text-md font-semibold mt-1">{items.length}</p>
+      {items.length > 0 && (
+        <div className="mt-4">
+          <div className="mb-1.5 flex items-baseline justify-between gap-3">
+            <span className="text-[13px] font-medium text-slate-700">Plan progress</span>
+            <span className="text-[13px] tabular-nums text-muted">
+              {completed} of {items.length} complete &middot; {pct}%
+            </span>
+          </div>
+          <Progress value={pct} label={`${completed} of ${items.length} milestones complete`} />
         </div>
-        <div className="bg-green-500 text-white p-2 rounded-sm shadow-md min-w-[110px]">
-          <p className="text-xs">Completed</p>
-          <p className="text-md font-semibold mt-1">
-            {completed} of {items.length}
-          </p>
-        </div>
-        <div className="bg-yellow-500 text-white p-2 rounded-sm shadow-md min-w-[110px]">
-          <p className="text-xs">In Progress</p>
-          <p className="text-md font-semibold mt-1">{inProgress}</p>
-        </div>
-        <div className={`${overdue > 0 ? "bg-red-500" : "bg-gray-500"} text-white p-2 rounded-sm shadow-md min-w-[110px]`}>
-          <p className="text-xs">Overdue</p>
-          <p className="text-md font-semibold mt-1">{overdue}</p>
-        </div>
-      </div>
+      )}
 
-      {loading ? (
-        <p className="text-gray-500 text-sm">Loading milestones...</p>
-      ) : error ? (
-        <p className="text-red-500 text-sm">{error}</p>
-      ) : items.length === 0 ? (
-        <p className="text-gray-500 text-sm">
-          No milestones yet. {canManage ? "Add the first milestone to start tracking this plan." : ""}
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {items.map((m) => {
-            const late = isMilestoneOverdue(m);
-            const next = MILESTONE_TRANSITIONS[m.status] || [];
-            return (
-              <li key={m.id} className="bg-white border border-gray-200 rounded-sm p-3">
-                <div className="flex flex-wrap justify-between items-start gap-2">
-                  <div className="min-w-0">
-                    <p className="font-medium text-sm text-gray-800">{m.title}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      Status: {m.status}
-                      {late && <span className="ml-2 font-bold text-red-600">Overdue</span>}
-                      {" · "}Due: {m.dueDate ? formatDateSafe(m.dueDate) : "No due date"}
-                    </p>
-                    {m.deliverable && (
-                      <p className="text-xs text-gray-600 mt-1">
-                        <span className="font-medium">Deliverable: </span>
-                        {m.deliverable}
+      <MetricRow
+        className="mt-4"
+        items={[
+          { label: "Milestones", value: items.length },
+          { label: "Completed", value: completed, suffix: `of ${items.length}` },
+          { label: "In progress", value: inProgress },
+          { label: "Overdue", value: overdue },
+        ]}
+      />
+
+      <div className="mt-5">
+        {loading ? (
+          <InlineLoading label="Loading milestones…" />
+        ) : error ? (
+          <p className="text-sm text-red-600">{error}</p>
+        ) : items.length === 0 ? (
+          <p className="text-sm text-muted">
+            No milestones yet.{" "}
+            {canManage ? "Add the first milestone to start tracking this plan." : ""}
+          </p>
+        ) : (
+          <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-white">
+            {items.map((m) => {
+              const late = isMilestoneOverdue(m);
+              const next = MILESTONE_TRANSITIONS[m.status] || [];
+              return (
+                <li key={m.id} className="px-4 py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-900">{m.title}</p>
+                      <p className="mt-0.5 text-xs text-muted">
+                        {m.dueDate ? `Due ${formatDateSafe(m.dueDate)}` : "No due date"}
                       </p>
-                    )}
-                    {m.description && <p className="text-xs text-gray-600 mt-1">{m.description}</p>}
-                  </div>
-                  {canManage && (
-                    <div className="flex flex-wrap gap-1">
-                      {next.map((to) => (
-                        <button
-                          key={to}
-                          onClick={() => handleMove(m, to)}
-                          className="px-2 py-1 border border-gray-300 rounded-sm text-xs hover:bg-gray-100"
-                        >
-                          {to}
-                        </button>
-                      ))}
-                      <button
-                        onClick={() => openEdit(m)}
-                        className="px-2 py-1 border border-gray-300 rounded-sm text-xs hover:bg-gray-100"
-                      >
-                        Edit
-                      </button>
-                      {canDelete && (
-                        <button
-                          onClick={() => setPendingDelete(m)}
-                          className="px-2 py-1 bg-red-500 text-white rounded-sm text-xs hover:bg-opacity-80"
-                        >
-                          Delete
-                        </button>
+                      {m.deliverable && (
+                        <p className="mt-1 text-[13px] text-slate-600">
+                          <span className="font-medium">Deliverable: </span>
+                          {m.deliverable}
+                        </p>
+                      )}
+                      {m.description && (
+                        <p className="mt-1 text-[13px] leading-relaxed text-slate-600">
+                          {m.description}
+                        </p>
                       )}
                     </div>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                    <div className="flex shrink-0 flex-col items-end gap-2">
+                      <StatusBadge status={late ? "Overdue" : m.status} />
+                      {canManage && (
+                        <div className="flex flex-wrap justify-end gap-1.5">
+                          {next.map((to) => (
+                            <Button
+                              key={to}
+                              onClick={() => handleMove(m, to)}
+                              variant="outline"
+                              size="sm"
+                            >
+                              {to}
+                            </Button>
+                          ))}
+                          <Button onClick={() => openEdit(m)} variant="outline" size="sm">
+                            Edit
+                          </Button>
+                          {canDelete && (
+                            <Button
+                              onClick={() => setPendingDelete(m)}
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-700 hover:bg-red-50"
+                            >
+                              Delete
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      {formError && !showForm && (
+        <p className="mt-2 text-sm text-red-600">{formError}</p>
       )}
 
-      {formError && <p className="text-red-500 text-sm mt-2">{formError}</p>}
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent>
+          <form onSubmit={handleSubmit}>
+            <DialogHeader>
+              <DialogTitle>{editingId ? "Edit milestone" : "Add milestone"}</DialogTitle>
+              <DialogDescription>
+                Milestones are shared with everyone assigned to this startup.
+              </DialogDescription>
+            </DialogHeader>
 
-      {showForm && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4 z-50">
-          <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
-            <h2 className="text-lg font-bold mb-4 text-center">{editingId ? "Edit Milestone" : "Add Milestone"}</h2>
-            <label className="block text-sm font-medium mb-1" htmlFor="ms-title">
-              Title <span className="text-red-500">*</span>
-            </label>
-            <input
-              id="ms-title"
-              type="text"
-              value={form.title}
-              onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
-              className="w-full p-2 border rounded-sm text-sm mb-2"
-            />
-            <label className="block text-sm font-medium mb-1" htmlFor="ms-desc">
-              Description
-            </label>
-            <textarea
-              id="ms-desc"
-              value={form.description}
-              onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
-              rows="2"
-              className="w-full p-2 border rounded-sm text-sm mb-2"
-            />
-            <label className="block text-sm font-medium mb-1" htmlFor="ms-deliverable">
-              Deliverable
-            </label>
-            <input
-              id="ms-deliverable"
-              type="text"
-              value={form.deliverable}
-              onChange={(e) => setForm((p) => ({ ...p, deliverable: e.target.value }))}
-              className="w-full p-2 border rounded-sm text-sm mb-2"
-              placeholder="e.g. Customer validation report"
-            />
-            <label className="block text-sm font-medium mb-1" htmlFor="ms-due">
-              Due date
-            </label>
-            <input
-              id="ms-due"
-              type="date"
-              value={form.dueDate}
-              onChange={(e) => setForm((p) => ({ ...p, dueDate: e.target.value }))}
-              className="w-full p-2 border rounded-sm text-sm mb-3"
-            />
-            {formError && <p className="text-red-500 text-sm mb-2">{formError}</p>}
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShowForm(false)}
-                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-sm text-sm hover:bg-gray-400"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={saving}
-                className={`${accent} px-4 py-2 text-white rounded-sm text-sm hover:bg-opacity-80 disabled:opacity-60`}
-              >
-                {saving ? "Saving..." : editingId ? "Update" : "Add"}
-              </button>
+            <div className="space-y-3">
+              <div>
+                <label className="tbi-label" htmlFor="ms-title">
+                  Title <span className="text-red-600">*</span>
+                </label>
+                <input
+                  id="ms-title"
+                  type="text"
+                  value={form.title}
+                  onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
+                  className="tbi-input"
+                />
+              </div>
+              <div>
+                <label className="tbi-label" htmlFor="ms-desc">
+                  Description
+                </label>
+                <textarea
+                  id="ms-desc"
+                  value={form.description}
+                  onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+                  rows="2"
+                  className="tbi-input"
+                />
+              </div>
+              <div>
+                <label className="tbi-label" htmlFor="ms-deliverable">
+                  Deliverable
+                </label>
+                <input
+                  id="ms-deliverable"
+                  type="text"
+                  value={form.deliverable}
+                  onChange={(e) => setForm((p) => ({ ...p, deliverable: e.target.value }))}
+                  className="tbi-input"
+                  placeholder="e.g. Customer validation report"
+                />
+              </div>
+              <div>
+                <label className="tbi-label" htmlFor="ms-due">
+                  Due date
+                </label>
+                <input
+                  id="ms-due"
+                  type="date"
+                  value={form.dueDate}
+                  onChange={(e) => setForm((p) => ({ ...p, dueDate: e.target.value }))}
+                  className="tbi-input"
+                />
+              </div>
             </div>
+
+            {formError && <p className="mt-3 text-sm text-red-600">{formError}</p>}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={saving}>
+                {saving ? "Saving…" : editingId ? "Update milestone" : "Add milestone"}
+              </Button>
+            </DialogFooter>
           </form>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
+
       <ConfirmDialog
         open={!!pendingDelete}
         title={pendingDelete ? `Delete milestone "${pendingDelete.title}"?` : "Delete milestone?"}

@@ -119,7 +119,7 @@ function AssessmentsPanel({ groupId, actorId, canManage, canDelete, accentColor 
         {canManage && (
           <button
             onClick={openCreate}
-            className={`${accent} text-white px-4 py-2 text-xs rounded-sm hover:bg-opacity-80 transition`}
+            className={`${accent} text-white px-4 py-2 text-xs rounded-md hover:bg-opacity-80 transition`}
           >
             + New Assessment
           </button>
@@ -127,42 +127,42 @@ function AssessmentsPanel({ groupId, actorId, canManage, canDelete, accentColor 
       </div>
 
       {loading ? (
-        <p className="text-gray-500 text-sm">Loading assessments...</p>
+        <p className="text-muted text-sm">Loading assessments...</p>
       ) : error ? (
         <p className="text-red-500 text-sm">{error}</p>
       ) : items.length === 0 ? (
-        <p className="text-gray-500 text-sm">
+        <p className="text-muted text-sm">
           No assessments recorded yet. {canManage ? "Record the initial assessment to baseline this startup." : ""}
         </p>
       ) : (
         <ul className="flex flex-col gap-2">
           {items.map((a) => (
-            <li key={a.id} className="bg-white border border-gray-200 rounded-sm p-3">
+            <li key={a.id} className="bg-white border border-line rounded-md p-3">
               <div className="flex flex-wrap justify-between items-start gap-2">
                 <div className="min-w-0">
-                  <p className="font-medium text-sm text-gray-800">
+                  <p className="font-medium text-sm text-slate-800">
                     {a.type} assessment
                     {a.assessmentDate ? ` · ${formatDateSafe(a.assessmentDate)}` : ""}
                   </p>
-                  {a.assessorName && <p className="text-xs text-gray-500">Assessor: {a.assessorName}</p>}
+                  {a.assessorName && <p className="text-xs text-muted">Assessor: {a.assessorName}</p>}
                   {a.criteria && (
-                    <p className="text-xs text-gray-600 mt-1">
+                    <p className="text-xs text-slate-600 mt-1">
                       <span className="font-medium">Criteria: </span>
                       {a.criteria}
                     </p>
                   )}
-                  <p className="text-xs text-gray-700 mt-1">
+                  <p className="text-xs text-slate-700 mt-1">
                     <span className="font-medium">Findings: </span>
                     {a.findings}
                   </p>
                   {a.recommendations && (
-                    <p className="text-xs text-gray-600 mt-1">
+                    <p className="text-xs text-slate-600 mt-1">
                       <span className="font-medium">Recommendations: </span>
                       {a.recommendations}
                     </p>
                   )}
                   {a.followUps && (
-                    <p className="text-xs text-gray-600 mt-1">
+                    <p className="text-xs text-slate-600 mt-1">
                       <span className="font-medium">Follow-ups: </span>
                       {a.followUps}
                     </p>
@@ -172,14 +172,14 @@ function AssessmentsPanel({ groupId, actorId, canManage, canDelete, accentColor 
                   <div className="flex gap-1">
                     <button
                       onClick={() => openEdit(a)}
-                      className="px-2 py-1 border border-gray-300 rounded-sm text-xs hover:bg-gray-100"
+                      className="px-2 py-1 border border-line-strong rounded-md text-xs hover:bg-surface-hover"
                     >
                       Edit
                     </button>
                     {canDelete && (
                       <button
                         onClick={() => setPendingDelete(a)}
-                        className="px-2 py-1 bg-red-500 text-white rounded-sm text-xs hover:bg-opacity-80"
+                        className="px-2 py-1 bg-red-500 text-white rounded-md text-xs hover:bg-opacity-80"
                       >
                         Delete
                       </button>
@@ -209,7 +209,7 @@ function AssessmentsPanel({ groupId, actorId, canManage, canDelete, accentColor 
                   id="as-type"
                   value={form.type}
                   onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))}
-                  className="w-full p-2 border rounded-sm text-sm"
+                  className="w-full p-2 border rounded-md text-sm"
                 >
                   {ASSESSMENT_TYPE_LIST.map((t) => (
                     <option key={t} value={t}>
@@ -227,7 +227,7 @@ function AssessmentsPanel({ groupId, actorId, canManage, canDelete, accentColor 
                   type="date"
                   value={form.assessmentDate}
                   onChange={(e) => setForm((p) => ({ ...p, assessmentDate: e.target.value }))}
-                  className="w-full p-2 border rounded-sm text-sm"
+                  className="w-full p-2 border rounded-md text-sm"
                 />
               </div>
             </div>
@@ -239,7 +239,7 @@ function AssessmentsPanel({ groupId, actorId, canManage, canDelete, accentColor 
               type="text"
               value={form.assessorName}
               onChange={(e) => setForm((p) => ({ ...p, assessorName: e.target.value }))}
-              className="w-full p-2 border rounded-sm text-sm mb-2"
+              className="w-full p-2 border rounded-md text-sm mb-2"
               placeholder="Who performed this assessment?"
             />
             <label className="block text-sm font-medium mb-1" htmlFor="as-criteria">
@@ -250,7 +250,7 @@ function AssessmentsPanel({ groupId, actorId, canManage, canDelete, accentColor 
               value={form.criteria}
               onChange={(e) => setForm((p) => ({ ...p, criteria: e.target.value }))}
               rows="2"
-              className="w-full p-2 border rounded-sm text-sm mb-2"
+              className="w-full p-2 border rounded-md text-sm mb-2"
               placeholder="What was evaluated?"
             />
             <label className="block text-sm font-medium mb-1" htmlFor="as-findings">
@@ -261,7 +261,7 @@ function AssessmentsPanel({ groupId, actorId, canManage, canDelete, accentColor 
               value={form.findings}
               onChange={(e) => setForm((p) => ({ ...p, findings: e.target.value }))}
               rows="3"
-              className="w-full p-2 border rounded-sm text-sm mb-2"
+              className="w-full p-2 border rounded-md text-sm mb-2"
             />
             <label className="block text-sm font-medium mb-1" htmlFor="as-rec">
               Recommendations
@@ -271,7 +271,7 @@ function AssessmentsPanel({ groupId, actorId, canManage, canDelete, accentColor 
               value={form.recommendations}
               onChange={(e) => setForm((p) => ({ ...p, recommendations: e.target.value }))}
               rows="2"
-              className="w-full p-2 border rounded-sm text-sm mb-2"
+              className="w-full p-2 border rounded-md text-sm mb-2"
             />
             <label className="block text-sm font-medium mb-1" htmlFor="as-follow">
               Follow-up actions
@@ -281,21 +281,21 @@ function AssessmentsPanel({ groupId, actorId, canManage, canDelete, accentColor 
               value={form.followUps}
               onChange={(e) => setForm((p) => ({ ...p, followUps: e.target.value }))}
               rows="2"
-              className="w-full p-2 border rounded-sm text-sm mb-3"
+              className="w-full p-2 border rounded-md text-sm mb-3"
             />
             {formError && <p className="text-red-500 text-sm mb-2">{formError}</p>}
             <div className="flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setShowForm(false)}
-                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-sm text-sm hover:bg-gray-400"
+                className="rounded-md bg-surface-hover px-4 py-2 text-sm text-ink transition-colors hover:bg-line"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className={`${accent} px-4 py-2 text-white rounded-sm text-sm hover:bg-opacity-80 disabled:opacity-60`}
+                className={`${accent} px-4 py-2 text-white rounded-md text-sm hover:bg-opacity-80 disabled:opacity-60`}
               >
                 {saving ? "Saving..." : editing ? "Update" : "Save"}
               </button>

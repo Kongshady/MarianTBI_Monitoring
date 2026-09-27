@@ -183,7 +183,7 @@ function Announcements() {
           isStaff && (
             <button
               onClick={openCreate}
-              className="px-4 py-2 bg-primary-color text-white rounded text-sm font-medium hover:bg-primary-deep transition"
+              className="px-4 py-2 bg-accent text-white rounded text-sm font-medium transition-colors hover:brightness-110"
             >
               New announcement
             </button>
@@ -223,7 +223,7 @@ function Announcements() {
                     </button>
                     <button
                       onClick={() => handlePublish(a, true)}
-                      className="px-3 py-1.5 bg-primary-color text-white rounded text-xs font-medium hover:bg-primary-deep transition"
+                      className="px-3 py-1.5 bg-accent text-white rounded text-xs font-medium transition-colors hover:brightness-110"
                     >
                       Publish
                     </button>
@@ -355,7 +355,7 @@ function Announcements() {
               <button
                 type="submit"
                 disabled={saving}
-                className="px-4 py-2 bg-primary-color text-white rounded text-sm font-medium hover:bg-primary-deep transition disabled:opacity-60"
+                className="px-4 py-2 bg-accent text-white rounded text-sm font-medium transition-colors hover:brightness-110 disabled:opacity-60"
               >
                 {saving ? "Saving..." : editing ? "Update" : "Create draft"}
               </button>

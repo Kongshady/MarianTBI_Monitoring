@@ -282,7 +282,7 @@ function EmViewGroup() {
                   groupId={groupId}
                   actorId={auth.currentUser?.uid}
                   canManage={canManageIncubationStatus({ appRole: viewerRole })}
-                  accentColor="bg-primary-color"
+                  accentColor="bg-accent"
                 />
               </section>
             </div>
@@ -467,7 +467,7 @@ function EmViewGroup() {
               actorId={auth.currentUser?.uid}
               canManage={true}
               canDelete={canDeleteMilestone({ appRole: viewerRole })}
-              accentColor="bg-primary-color"
+              accentColor="bg-accent"
               onCount={setMilestoneCounts}
             />
           )}
@@ -477,7 +477,7 @@ function EmViewGroup() {
               groupId={groupId}
               actorId={auth.currentUser?.uid}
               canAssign={canAssignMentors({ appRole: viewerRole })}
-              accentColor="bg-primary-color"
+              accentColor="bg-accent"
             />
           )}
 
@@ -487,7 +487,7 @@ function EmViewGroup() {
               actorId={auth.currentUser?.uid}
               canSubmit={false}
               canReview={canReviewReports({ appRole: viewerRole })}
-              accentColor="bg-primary-color"
+              accentColor="bg-accent"
               onCount={setReportCount}
             />
           )}
@@ -510,7 +510,7 @@ function EmViewGroup() {
               actorId={auth.currentUser?.uid}
               canManage={canManageAssessments({ appRole: viewerRole })}
               canDelete={canDeleteAssessment({ appRole: viewerRole })}
-              accentColor="bg-primary-color"
+              accentColor="bg-accent"
             />
           )}
 

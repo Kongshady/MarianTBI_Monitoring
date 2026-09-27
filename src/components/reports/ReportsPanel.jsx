@@ -1,5 +1,17 @@
 import { useEffect, useState } from "react";
 import ConfirmDialog from "../ui/ConfirmDialog.jsx";
+import { Button } from "../ui/button.jsx";
+import { SectionHeader } from "../ui/PageHeader.jsx";
+import StatusBadge from "../ui/StatusBadge.jsx";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog.jsx";
+import { InlineLoading } from "../ui/states.jsx";
 import { toast } from "../../lib/toast.js";
 import { REPORT_STATUS, REPORT_TRANSITIONS, formatDateTimeSafe, toDateSafe } from "../../lib/domain.js";
 import {
@@ -32,7 +44,7 @@ const EMPTY_FORM = {
 
 // Shared progress-report view: owner drafts/submits; staff review with
 // feedback. Props: canSubmit (owner-side), canReview (staff-side).
-function ReportsPanel({ groupId, actorId, canSubmit, canReview, accentColor, onCount }) {
+function ReportsPanel({ groupId, actorId, canSubmit, canReview, onCount }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -45,8 +57,6 @@ function ReportsPanel({ groupId, actorId, canSubmit, canReview, accentColor, onC
   const [actingId, setActingId] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
-
-  const accent = accentColor || "bg-accent";
 
   useEffect(() => {
     setLoading(true);
@@ -161,7 +171,10 @@ function ReportsPanel({ groupId, actorId, canSubmit, canReview, accentColor, onC
       }
       setConfirm({
         title: `Mark this report "${toStatus}"?`,
-        description: toStatus === REPORT_STATUS.NEEDS_REVISION ? "The owner will be asked to revise." : undefined,
+        description:
+          toStatus === REPORT_STATUS.NEEDS_REVISION
+            ? "The owner will be asked to revise."
+            : undefined,
         confirmLabel: toStatus,
         danger: toStatus === REPORT_STATUS.NEEDS_REVISION,
         run: async () => {
@@ -218,189 +231,221 @@ function ReportsPanel({ groupId, actorId, canSubmit, canReview, accentColor, onC
 
   return (
     <div className="mt-2 w-full">
-      <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
-        <h3 className="font-bold text-lg">Progress Reports</h3>
-        {canSubmit && (
-          <button
-            onClick={openCreate}
-            className={`${accent} text-white px-4 py-2 text-xs rounded-sm hover:bg-opacity-80 transition`}
-          >
-            + New Report
-          </button>
-        )}
-      </div>
+      <SectionHeader
+        hint="Periodic progress reports. Owners draft and submit; staff review and give feedback."
+        count={items.length}
+        action={
+          canSubmit ? (
+            <Button onClick={openCreate} size="sm">
+              New report
+            </Button>
+          ) : null
+        }
+      >
+        Progress reports
+      </SectionHeader>
 
       {canReview && awaitingReview > 0 && (
-        <p className="text-xs bg-yellow-50 border border-yellow-200 rounded-sm p-2 mb-2">
+        <p className="mt-3.5 rounded-md border border-amber-200 bg-amber-50 px-3.5 py-2 text-[13px] text-amber-900">
           {awaitingReview} report{awaitingReview === 1 ? "" : "s"} awaiting review.
         </p>
       )}
 
-      {loading ? (
-        <p className="text-gray-500 text-sm">Loading reports...</p>
-      ) : error ? (
-        <p className="text-red-500 text-sm">{error}</p>
-      ) : items.length === 0 ? (
-        <p className="text-gray-500 text-sm">
-          No reports yet. {canSubmit ? "Submit the first progress report for this period." : ""}
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {items.map((r) => {
-            const next = REPORT_TRANSITIONS[r.status] || [];
-            const isOwner = r.incubateeId === actorId;
-            const editable = isOwner && [REPORT_STATUS.DRAFT, REPORT_STATUS.NEEDS_REVISION].includes(r.status);
-            return (
-              <li key={r.id} className="bg-white border border-gray-200 rounded-sm p-3">
-                <div className="flex flex-wrap justify-between items-start gap-2">
-                  <div className="min-w-0">
-                    <p className="font-medium text-sm text-gray-800">{r.reportingPeriod}</p>
-                    <p className="text-xs text-gray-500">
-                      Status: {r.status}
-                      {r.submittedAt ? ` · Submitted ${formatDateTimeSafe(toDateSafe(r.submittedAt))}` : ""}
-                    </p>
-                    {r.accomplishments && (
-                      <p className="text-xs text-gray-600 mt-1">
-                        <span className="font-medium">Accomplishments: </span>
-                        {r.accomplishments}
-                      </p>
-                    )}
-                    {r.challenges && (
-                      <p className="text-xs text-gray-600 mt-1">
-                        <span className="font-medium">Challenges: </span>
-                        {r.challenges}
-                      </p>
-                    )}
-                    {r.supportNeeded && (
-                      <p className="text-xs text-gray-600 mt-1">
-                        <span className="font-medium">Support needed: </span>
-                        {r.supportNeeded}
-                      </p>
-                    )}
-                    {r.feedback && (
-                      <p className={`text-xs mt-2 p-2 rounded-sm ${r.status === REPORT_STATUS.NEEDS_REVISION ? "bg-yellow-50 border border-yellow-200" : "bg-gray-50 border border-gray-200"}`}>
-                        <span className="font-medium">Reviewer feedback: </span>
-                        {r.feedback}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {editable && canSubmit && (
-                      <button
-                        onClick={() => openEdit(r)}
-                        className="px-2 py-1 border border-gray-300 rounded-sm text-xs hover:bg-gray-100"
-                      >
-                        Edit
-                      </button>
-                    )}
-                    {canReview &&
-                      next.map((to) => (
-                        <button
-                          key={to}
-                          onClick={() => handleReview(r, to)}
-                          disabled={actingId === r.id}
-                          className="px-2 py-1 border border-gray-300 rounded-sm text-xs hover:bg-gray-100 disabled:opacity-60"
+      <div className="mt-4">
+        {loading ? (
+          <InlineLoading label="Loading reports…" />
+        ) : error ? (
+          <p className="text-sm text-red-600">{error}</p>
+        ) : items.length === 0 ? (
+          <p className="text-sm text-muted">
+            No reports yet.{" "}
+            {canSubmit ? "Submit the first progress report for this period." : ""}
+          </p>
+        ) : (
+          <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-white">
+            {items.map((r) => {
+              const next = REPORT_TRANSITIONS[r.status] || [];
+              const isOwner = r.incubateeId === actorId;
+              const editable =
+                isOwner &&
+                [REPORT_STATUS.DRAFT, REPORT_STATUS.NEEDS_REVISION].includes(r.status);
+              return (
+                <li key={r.id} className="px-4 py-3.5">
+                  <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium text-slate-900">
+                          {r.reportingPeriod}
+                        </p>
+                        <StatusBadge status={r.status} />
+                      </div>
+                      {r.submittedAt && (
+                        <p className="mt-0.5 text-xs text-muted">
+                          Submitted {formatDateTimeSafe(toDateSafe(r.submittedAt))}
+                        </p>
+                      )}
+                      {r.accomplishments && (
+                        <p className="mt-1.5 text-[13px] leading-relaxed text-slate-600">
+                          <span className="font-medium text-slate-700">Accomplishments: </span>
+                          {r.accomplishments}
+                        </p>
+                      )}
+                      {r.challenges && (
+                        <p className="mt-1 text-[13px] leading-relaxed text-slate-600">
+                          <span className="font-medium text-slate-700">Challenges: </span>
+                          {r.challenges}
+                        </p>
+                      )}
+                      {r.supportNeeded && (
+                        <p className="mt-1 text-[13px] leading-relaxed text-slate-600">
+                          <span className="font-medium text-slate-700">Support needed: </span>
+                          {r.supportNeeded}
+                        </p>
+                      )}
+                      {r.feedback && (
+                        <p
+                          className={`mt-2.5 rounded-md border-l-2 px-3 py-2 text-[13px] leading-relaxed ${
+                            r.status === REPORT_STATUS.NEEDS_REVISION
+                              ? "border-amber-400 bg-amber-50 text-amber-900"
+                              : "border-line-strong bg-surface-sunken text-slate-600"
+                          }`}
                         >
-                          {to}
-                        </button>
-                      ))}
-                    {(canReview || (editable && r.status === REPORT_STATUS.DRAFT)) && (
-                      <button
-                        onClick={() => handleDelete(r)}
-                        className="px-2 py-1 bg-red-500 text-white rounded-sm text-xs hover:bg-opacity-80"
-                      >
-                        Delete
-                      </button>
-                    )}
+                          <span className="font-medium">Reviewer feedback: </span>
+                          {r.feedback}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                      {editable && canSubmit && (
+                        <Button onClick={() => openEdit(r)} variant="outline" size="sm">
+                          Edit
+                        </Button>
+                      )}
+                      {canReview &&
+                        next.map((to) => (
+                          <Button
+                            key={to}
+                            onClick={() => handleReview(r, to)}
+                            variant="outline"
+                            size="sm"
+                            disabled={actingId === r.id}
+                          >
+                            {to}
+                          </Button>
+                        ))}
+                      {(canReview || (editable && r.status === REPORT_STATUS.DRAFT)) && (
+                        <Button
+                          onClick={() => handleDelete(r)}
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-700 hover:bg-red-50"
+                        >
+                          Delete
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                </div>
-                {canReview && next.length > 0 && (
-                  <input
-                    type="text"
-                    value={actingId === r.id ? feedback : ""}
-                    onChange={(e) => {
-                      setActingId(r.id);
-                      setFeedback(e.target.value);
-                    }}
-                    placeholder="Feedback (required for revision)"
-                    className="mt-2 w-full p-2 border rounded-sm text-xs"
-                  />
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
 
-      {formError && <p className="text-red-500 text-sm mt-2">{formError}</p>}
+                  {canReview && next.length > 0 && (
+                    <div className="mt-2.5 max-w-sm">
+                      <label
+                        className="tbi-label"
+                        htmlFor={`rep-feedback-${r.id}`}
+                      >
+                        Reviewer feedback
+                      </label>
+                      <input
+                        id={`rep-feedback-${r.id}`}
+                        type="text"
+                        value={actingId === r.id ? feedback : ""}
+                        onChange={(e) => {
+                          setActingId(r.id);
+                          setFeedback(e.target.value);
+                        }}
+                        placeholder="Required when requesting revision"
+                        className="tbi-input"
+                      />
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
 
-      {showForm && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm p-4 z-50">
-          <form onSubmit={handleSave} className="bg-white p-6 rounded-lg shadow-lg w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-bold mb-4 text-center">
-              {editing ? "Edit Report" : "New Progress Report"}
-            </h2>
-            <label className="block text-sm font-medium mb-1" htmlFor="rep-period">
-              Reporting period <span className="text-red-500">*</span>
-            </label>
-            <input
-              id="rep-period"
-              type="text"
-              value={form.reportingPeriod}
-              onChange={(e) => setForm((p) => ({ ...p, reportingPeriod: e.target.value }))}
-              className="w-full p-2 border rounded-sm text-sm mb-2"
-              placeholder="e.g. March 2026"
-            />
-            {FIELD_DEFS.map((f) => (
-              <div key={f.key}>
-                <label className="block text-sm font-medium mb-1" htmlFor={`rep-${f.key}`}>
-                  {f.label}
+      {formError && !showForm && <p className="mt-2 text-sm text-red-600">{formError}</p>}
+
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent className="max-w-xl">
+          <form onSubmit={handleSave}>
+            <DialogHeader>
+              <DialogTitle>
+                {editing ? "Edit progress report" : "New progress report"}
+              </DialogTitle>
+              <DialogDescription>
+                {editing
+                  ? "Save a draft, or submit it to staff for review."
+                  : "Saved as a draft until you submit it for review."}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              <div>
+                <label className="tbi-label" htmlFor="rep-period">
+                  Reporting period <span className="text-red-600">*</span>
                 </label>
-                <textarea
-                  id={`rep-${f.key}`}
-                  value={form[f.key]}
-                  onChange={(e) => setForm((p) => ({ ...p, [f.key]: e.target.value }))}
-                  rows="2"
-                  className="w-full p-2 border rounded-sm text-sm mb-2"
+                <input
+                  id="rep-period"
+                  type="text"
+                  value={form.reportingPeriod}
+                  onChange={(e) => setForm((p) => ({ ...p, reportingPeriod: e.target.value }))}
+                  className="tbi-input"
+                  placeholder="e.g. March 2026"
                 />
               </div>
-            ))}
+              {FIELD_DEFS.map((f) => (
+                <div key={f.key}>
+                  <label className="tbi-label" htmlFor={`rep-${f.key}`}>
+                    {f.label}
+                  </label>
+                  <textarea
+                    id={`rep-${f.key}`}
+                    value={form[f.key]}
+                    onChange={(e) => setForm((p) => ({ ...p, [f.key]: e.target.value }))}
+                    rows="2"
+                    className="tbi-input"
+                  />
+                </div>
+              ))}
+            </div>
+
             {editing?.feedback && (
-              <p className="text-xs bg-yellow-50 border border-yellow-200 rounded-sm p-2 mb-2">
+              <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-900">
                 <span className="font-medium">Reviewer feedback: </span>
                 {editing.feedback}
               </p>
             )}
-            {formError && <p className="text-red-500 text-sm mb-2">{formError}</p>}
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShowForm(false)}
-                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-sm text-sm hover:bg-gray-400"
-              >
+            {formError && <p className="mt-3 text-sm text-red-600">{formError}</p>}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
                 Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={saving}
-                className="px-4 py-2 bg-gray-200 rounded-sm text-sm hover:bg-gray-300 disabled:opacity-60"
-              >
-                {saving ? "Saving..." : "Save Draft"}
-              </button>
+              </Button>
+              <Button type="submit" variant="outline" disabled={saving}>
+                {saving ? "Saving…" : "Save draft"}
+              </Button>
               {editing && (
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={saving}
-                  className={`${accent} px-4 py-2 text-white rounded-sm text-sm hover:bg-opacity-80 disabled:opacity-60`}
-                >
-                  Submit
-                </button>
+                <Button type="button" onClick={handleSubmit} disabled={saving}>
+                  Submit for review
+                </Button>
               )}
-            </div>
+            </DialogFooter>
           </form>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
+
       <ConfirmDialog
         open={!!confirm}
         title={confirm?.title || ""}

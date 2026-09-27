@@ -141,7 +141,7 @@ function Activities() {
           isStaff && (
             <button
               onClick={() => setShowCreate(true)}
-              className="px-4 py-2 bg-primary-color text-white rounded text-sm font-medium hover:bg-primary-deep transition"
+              className="px-4 py-2 bg-accent text-white rounded text-sm font-medium transition-colors hover:brightness-110"
             >
               New activity
             </button>
@@ -304,7 +304,7 @@ function Activities() {
                 <button
                   type="submit"
                   disabled={creating}
-                  className="px-4 py-2 bg-primary-color text-white rounded text-sm font-medium hover:bg-primary-deep transition disabled:opacity-60"
+                  className="px-4 py-2 bg-accent text-white rounded text-sm font-medium transition-colors hover:brightness-110 disabled:opacity-60"
                 >
                   {creating ? "Creating..." : "Create"}
                 </button>

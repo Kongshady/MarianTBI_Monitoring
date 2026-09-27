@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
 import { getAuth } from "firebase/auth";
 import AppShell from "../../components/layout/AppShell.jsx";
-import { SectionTitle } from "../../components/ui/PageHeader.jsx";
-import { EmptyState, ErrorState, PageSkeleton } from "../../components/ui/states.jsx";
+import { SectionHeader } from "../../components/ui/PageHeader.jsx";
+import { ActionQueue, MetricRow, QueueColumn, QueueRow, Sparkline, StageBar } from "../../components/ui/dashboard.jsx";
+import { ErrorState, PageSkeleton } from "../../components/ui/states.jsx";import StatusBadge from "../../components/ui/StatusBadge.jsx";
 import { db } from "../../config/marian-config.js";
 import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
 import { APPLICATION_STATUS, INCUBATEE_STATUS, REPORT_STATUS, formatDateSafe, toDateSafe } from "../../lib/domain.js";
@@ -19,11 +19,43 @@ const REVIEW_APPLICATIONS = [
 
 const REVIEW_REPORTS = [REPORT_STATUS.SUBMITTED, REPORT_STATUS.UNDER_REVIEW];
 
+const STAGE_ORDER = [
+  APPLICATION_STATUS.SUBMITTED,
+  APPLICATION_STATUS.SCREENING,
+  APPLICATION_STATUS.FOR_EVALUATION,
+  APPLICATION_STATUS.ACCEPTED,
+];
+
 function greeting() {
   const hour = new Date().getHours();
   if (hour < 12) return "Good morning";
   if (hour < 18) return "Good afternoon";
   return "Good evening";
+}
+
+// Eight-week activity trend, derived from the activities already loaded for
+// the dashboard. Adds no new query — it only reshapes existing records.
+function weeklyTrend(activities) {
+  const weeks = [];
+  const now = new Date();
+  for (let i = 7; i >= 0; i -= 1) {
+    const end = new Date(now);
+    end.setDate(end.getDate() - i * 7);
+    const start = new Date(end);
+    start.setDate(start.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+    const count = activities.filter((a) => {
+      const t = toDateSafe(a.date)?.getTime();
+      return t != null && t >= start.getTime() && t <= end.getTime();
+    }).length;
+    weeks.push({
+      key: end.toISOString().slice(0, 10),
+      label: `w/c ${start.getDate()}/${start.getMonth() + 1}`,
+      value: count,
+    });
+  }
+  return weeks;
 }
 
 function AdDashboard() {
@@ -130,12 +162,17 @@ function AdDashboard() {
   const recentApps = [...needsReviewApps]
     .sort((a, b) => (toDateSafe(b.updatedAt)?.getTime() || 0) - (toDateSafe(a.updatedAt)?.getTime() || 0))
     .slice(0, 5);
-  const pipeline = [
-    APPLICATION_STATUS.SUBMITTED,
-    APPLICATION_STATUS.SCREENING,
-    APPLICATION_STATUS.FOR_EVALUATION,
-    APPLICATION_STATUS.ACCEPTED,
-  ].map((status) => ({ status, count: apps.filter((a) => a.status === status).length }));
+  const pipeline = useMemo(
+    () =>
+      STAGE_ORDER.map((status) => ({
+        label: status,
+        status,
+        count: apps.filter((a) => a.status === status).length,
+        to: status === "Accepted" ? "/applications" : "/applications?status=review",
+      })),
+    [apps]
+  );
+  const trend = useMemo(() => weeklyTrend(activities), [activities]);
 
   const groupName = (id) => groups.find((g) => g.id === id)?.name || "Startup";
   const groupLink = (id) => {
@@ -145,157 +182,150 @@ function AdDashboard() {
   };
 
   const attention = [
-    { label: "Applications needing review", count: needsReviewApps.length, to: "/applications?status=review", tone: needsReviewApps.length > 0 ? "red" : "gray" },
-    { label: "Reports awaiting review", count: reports.length, to: null, tone: reports.length > 0 ? "amber" : "gray" },
-    { label: "Documents needing verification", count: pendingDocs.length, to: null, tone: pendingDocs.length > 0 ? "amber" : "gray" },
-    { label: "Overdue milestones", count: overdueMilestones.length, to: null, tone: overdueMilestones.length > 0 ? "red" : "gray" },
-    { label: "Pending user approvals", count: pendingUsers, to: "/admin-user-management", tone: pendingUsers > 0 ? "blue" : "gray" },
+    { label: "Applications needing review", count: needsReviewApps.length, to: "/applications?status=review", tone: "critical" },
+    { label: "Reports awaiting review", count: reports.length, to: null, tone: "warning" },
+    { label: "Documents needing verification", count: pendingDocs.length, to: null, tone: "warning" },
+    { label: "Overdue milestones", count: overdueMilestones.length, to: null, tone: "critical" },
+    { label: "Pending user approvals", count: pendingUsers, to: "/admin-user-management", tone: "info" },
   ];
+
+  const firstName = userName?.split(" ")[0] || "there";
 
   return (
     <AppShell role={role} userName={userName}>
-      <h1 className="text-[30px] leading-tight font-semibold tracking-tight text-slate-900">
-        {greeting()}, {userName?.split(" ")[0] || "there"}.
-      </h1>
-      <p className="text-sm text-muted mt-1 mb-6">Here is what is happening in the Marian TBI program today.</p>
+      <header className="mb-6 sm:mb-7">
+        <h1 className="text-[22px] font-semibold leading-tight tracking-tight text-slate-900 sm:text-[26px] lg:text-[30px]">
+          {greeting()}, {firstName}.
+        </h1>
+        <p className="mt-1 max-w-2xl text-sm text-muted">
+          Here is what is happening in the Marian TBI program today.
+        </p>
+      </header>
 
       {loading ? (
         <PageSkeleton rows={8} />
       ) : error ? (
         <ErrorState message={error} onRetry={() => window.location.reload()} />
       ) : (
-        <>
-          <SectionTitle hint="Items waiting on someone — click through to act.">Action required</SectionTitle>
-          <ul className="bg-white border border-line rounded divide-y divide-line mb-8">
-            {attention.map((item) => (
-              <li key={item.label} className="flex items-center gap-3 px-4 py-3">
-                <span
-                  className={`w-2 h-2 rounded-full shrink-0 ${
-                    item.tone === "red" ? "bg-red-500" : item.tone === "amber" ? "bg-amber-500" : item.tone === "blue" ? "bg-sky-600" : "bg-slate-300"
-                  }`}
-                  aria-hidden="true"
-                />
-                <span className="text-2xl font-semibold text-slate-900 tabular-nums w-10">{item.count}</span>
-                <span className="flex-1 text-sm text-slate-700">{item.label}</span>
-                {item.to && item.count > 0 && (
-                  <Link to={item.to} className="text-[13px] font-medium text-accent hover:underline">
-                    Review →
-                  </Link>
-                )}
-              </li>
-            ))}
-          </ul>
+        <div className="space-y-8">
+          {/* ── What requires attention ─────────────────────────────── */}
+          <section aria-labelledby="sec-attention">
+            <SectionHeader hint="Items waiting on someone. Open one to act on it.">
+              <span id="sec-attention">Action required</span>
+            </SectionHeader>
+            <ActionQueue items={attention} className="mt-3.5" />
+          </section>
 
-          <SectionTitle hint="Live counts from program records — never estimates.">Program at a glance</SectionTitle>
-          <dl className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-line border border-line rounded overflow-hidden mb-8">
-            {[
-              { label: "Active incubatees", value: activeGroups.length },
-              { label: "Total applications", value: apps.length },
-              { label: "Graduated", value: graduated },
-              { label: "Exited / withdrawn", value: exited },
-            ].map((kpi) => (
-              <div key={kpi.label} className="bg-white px-4 py-4">
-                <dt className="text-xs text-muted">{kpi.label}</dt>
-                <dd className="text-[28px] leading-8 font-semibold text-slate-900 tabular-nums">{kpi.value}</dd>
+          {/* ── Program figures ──────────────────────────────────────── */}
+          <section aria-labelledby="sec-program">
+            <SectionHeader hint="Live counts from program records — never estimates.">
+              <span id="sec-program">Program at a glance</span>
+            </SectionHeader>
+            <MetricRow
+              className="mt-3.5"
+              items={[
+                { label: "Active incubatees", value: activeGroups.length },
+                { label: "Total applications", value: apps.length },
+                { label: "Graduated", value: graduated },
+                { label: "Exited / withdrawn", value: exited },
+              ]}
+            />
+          </section>
+
+          {/* ── Pipeline + activity trend ───────────────────────────── */}
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+            <section aria-labelledby="sec-pipeline">
+              <SectionHeader hint="Where every application currently sits. Select a stage to filter the queue.">
+                <span id="sec-pipeline">Application pipeline</span>
+              </SectionHeader>
+              <div className="mt-4">
+                <StageBar stages={pipeline} />
               </div>
-            ))}
-          </dl>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <section className="bg-white border border-line rounded p-4">
-              <h2 className="text-sm font-semibold text-slate-900 mb-1">Application pipeline</h2>
-              <p className="text-xs text-muted mb-3">Click a stage to filter the queue.</p>
-              <ol className="flex flex-col gap-0">
-                {pipeline.map((stage, i) => (
-                  <li key={stage.status}>
-                    <Link
-                      to={stage.status === "Accepted" ? "/applications" : "/applications?status=review"}
-                      className="flex items-center gap-3 py-2 border-b border-line last:border-b-0 hover:bg-slate-50 -mx-1 px-1 rounded"
-                    >
-                      <span className="text-xs font-semibold text-muted w-5">{i + 1}</span>
-                      <span className="flex-1 text-sm text-slate-700">{stage.status}</span>
-                      <span className="text-sm font-semibold text-slate-900 tabular-nums">{stage.count}</span>
-                    </Link>
-                  </li>
-                ))}
-              </ol>
             </section>
 
-            <section className="bg-white border border-line rounded p-4">
-              <h2 className="text-sm font-semibold text-slate-900 mb-1">Upcoming activities</h2>
-              <p className="text-xs text-muted mb-3">Next 5 scheduled.</p>
-              {upcomingActivities.length === 0 ? (
-                <EmptyState title="Nothing scheduled" description="Upcoming trainings and events will appear here." />
-              ) : (
-                <ul className="flex flex-col">
-                  {upcomingActivities.map((a) => (
-                    <li key={a.id} className="flex gap-3 py-2 border-b border-line last:border-b-0">
-                      <span className="text-center shrink-0 w-11">
-                        <span className="block text-[11px] font-semibold uppercase text-muted">
-                          {toDateSafe(a.date)?.toLocaleDateString("en-US", { month: "short" })}
-                        </span>
-                        <span className="block text-lg font-semibold text-slate-900 leading-6">
-                          {toDateSafe(a.date)?.getDate()}
-                        </span>
-                      </span>
-                      <span>
-                        <Link to={`/activities/${a.id}`} className="text-sm font-medium text-slate-900 hover:text-accent">
-                          {a.title}
-                        </Link>
-                        <span className="block text-xs text-muted">
-                          {a.type}
-                          {a.location ? ` · ${a.location}` : ""}
-                        </span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <section className="bg-white border border-line rounded p-4">
-              <h2 className="text-sm font-semibold text-slate-900 mb-1">Recent applications</h2>
-              <p className="text-xs text-muted mb-3">Latest needing review.</p>
-              {recentApps.length === 0 ? (
-                <p className="text-sm text-muted">Queue is clear.</p>
-              ) : (
-                <ul className="flex flex-col">
-                  {recentApps.map((a) => (
-                    <li key={a.id} className="py-2 border-b border-line last:border-b-0">
-                      <Link to={`/applications/${a.id}`} className="text-sm font-medium text-slate-900 hover:text-accent">
-                        {a.enterpriseName || "Untitled application"}
-                      </Link>
-                      <span className="block text-xs text-muted">
-                        {a.status} · {a.updatedAt ? formatDateSafe(a.updatedAt) : ""}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <section className="bg-white border border-line rounded p-4">
-              <h2 className="text-sm font-semibold text-slate-900 mb-1">Overdue milestones</h2>
-              <p className="text-xs text-muted mb-3">Derived from due dates.</p>
-              {overdueMilestones.length === 0 ? (
-                <p className="text-sm text-muted">Nothing overdue.</p>
-              ) : (
-                <ul className="flex flex-col max-h-64 overflow-y-auto">
-                  {overdueMilestones.slice(0, 20).map((m) => (
-                    <li key={m.id} className="py-2 border-b border-line last:border-b-0">
-                      <Link to={groupLink(m.groupId)} className="text-sm font-medium text-slate-900 hover:text-accent">
-                        {m.title}
-                      </Link>
-                      <span className="block text-xs text-muted">
-                        {groupName(m.groupId)} · due {m.dueDate ? formatDateSafe(m.dueDate) : "no date"}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+            <section aria-labelledby="sec-trend">
+              <SectionHeader hint="Scheduled activities per week across the last eight weeks.">
+                <span id="sec-trend">Activity trend</span>
+              </SectionHeader>
+              <div className="mt-4">
+                <Sparkline
+                  data={trend}
+                  label={`Activities per week over the last eight weeks. Peak ${Math.max(
+                    0,
+                    ...trend.map((t) => t.value)
+                  )}.`}
+                  caption={`${trend.reduce((s, t) => s + t.value, 0)} scheduled in 8 weeks`}
+                />
+              </div>
             </section>
           </div>
-        </>
+
+          {/* ── Working queues ──────────────────────────────────────── */}
+          <section aria-labelledby="sec-work">
+            <SectionHeader hint="The three lists a program manager actually works from.">
+              <span id="sec-work">Needs follow-up</span>
+            </SectionHeader>
+
+            <div className="mt-3.5 grid grid-cols-1 gap-px overflow-hidden rounded-lg border border-line bg-line lg:grid-cols-3">
+              <QueueColumn
+                title="Upcoming activities"
+                caption="Next 5 scheduled"
+                isEmpty={upcomingActivities.length === 0}
+                emptyTitle="Nothing scheduled"
+                emptyBody="Upcoming trainings and events will appear here."
+              >
+                {upcomingActivities.map((a) => (
+                  <QueueRow key={a.id} to={`/activities/${a.id}`} title={a.title}>
+                    <span className="block text-xs text-muted">
+                      {a.type}
+                      {a.location ? ` · ${a.location}` : ""}
+                    </span>
+                  </QueueRow>
+                ))}
+              </QueueColumn>
+
+              <QueueColumn
+                title="Recent applications"
+                caption="Latest needing review"
+                isEmpty={recentApps.length === 0}
+                emptyTitle="Queue is clear"
+                emptyBody="No application is waiting for review right now."
+              >
+                {recentApps.map((a) => (
+                  <QueueRow
+                    key={a.id}
+                    to={`/applications/${a.id}`}
+                    title={a.enterpriseName || "Untitled application"}
+                  >
+                    <span className="mt-0.5 inline-block">
+                      <StatusBadge status={a.status} />
+                    </span>
+                    <span className="block text-xs text-muted">
+                      {a.updatedAt ? formatDateSafe(a.updatedAt) : ""}
+                    </span>
+                  </QueueRow>
+                ))}
+              </QueueColumn>
+
+              <QueueColumn
+                title="Overdue milestones"
+                caption="Derived from due dates"
+                isEmpty={overdueMilestones.length === 0}
+                emptyTitle="Nothing overdue"
+                emptyBody="Every milestone in the program is within its due date."
+              >
+                {overdueMilestones.slice(0, 20).map((m) => (
+                  <QueueRow key={m.id} to={groupLink(m.groupId)} title={m.title}>
+                    <span className="block text-xs text-muted">
+                      {groupName(m.groupId)} · due{" "}
+                      {m.dueDate ? formatDateSafe(m.dueDate) : "no date"}
+                    </span>
+                  </QueueRow>
+                ))}
+              </QueueColumn>
+            </div>
+          </section>
+        </div>
       )}
     </AppShell>
   );

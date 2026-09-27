@@ -6,12 +6,19 @@
     font-family: "Poppins", ui-sans-serif, system-ui, sans-serif;
 }
 
-/* ── Role-based accent system ──
-   One Marian TBI PMIS, two clear user identities.
-   --accent is the single CSS custom that every component
-   references for interactive highlights (active nav, tabs,
-   buttons, focus rings, links, role indicators).
-*/
+/* ══════════════════════════════════════════════════════════════════════
+   1. ROLE-BASED ACCENT SYSTEM  (Marian TBI identity)
+   ----------------------------------------------------------------------
+   One PMIS, two clear user identities. --accent is the single custom
+   property every component references for interactive highlights:
+   active nav, tabs, primary actions, focus rings, links, role markers.
+
+   NOTE: shadcn's own theme also defines a token literally named
+   "--accent" (meaning "muted hover surface"). To avoid a silent
+   collision, the shadcn layer below deliberately names that slot
+   "--surface-hover" instead. "--accent" stays reserved for the role
+   colour, and nothing in the shadcn layer may redefine it.
+   ══════════════════════════════════════════════════════════════════════ */
 :root {
     --accent: #058890;
     --accent-rgb: 5, 136, 144;
@@ -33,6 +40,73 @@
     --accent-muted: rgba(3, 136, 143, 0.12);
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   2. FOUNDATION TOKENS
+   Institutional palette. Navy carries structure; accent carries identity.
+   ══════════════════════════════════════════════════════════════════════ */
+:root {
+    --navy: #1E2A44;
+    --navy-deep: #141D33;
+    --surface: #F4F6F9;
+    --surface-raised: #FFFFFF;
+    --surface-sunken: #FAFBFC;
+    --line: #E3E7EF;
+    --line-strong: #CBD2E0;
+    --ink: #0F172A;
+    --ink-soft: #334155;
+    --muted: #5B6474;
+    --danger: #DC2626;
+    --warning: #B45309;
+    --success: #047857;
+    --info: #0369A1;
+
+    --radius: 0.375rem;
+    --rule: 1px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   3. SHADCN-COMPATIBLE TOKEN LAYER
+   shadcn primitives are styled through these slots so that adopting a
+   component never drags in shadcn's default palette. Every value points
+   back at a PMIS token above, so a role-accent change propagates for
+   free and the two design languages can never drift apart.
+
+   "--surface-hover" replaces shadcn's colliding "--accent" slot.
+   ══════════════════════════════════════════════════════════════════════ */
+:root {
+    --background: var(--surface);
+    --foreground: var(--ink);
+
+    --card: var(--surface-raised);
+    --card-foreground: var(--ink);
+
+    --popover: var(--surface-raised);
+    --popover-foreground: var(--ink);
+
+    --primary: var(--navy);
+    --primary-foreground: #FFFFFF;
+
+    --secondary: #EDF0F5;
+    --secondary-foreground: var(--navy);
+
+    /* shadcn's `muted` surface slot is intentionally not bridged: PMIS
+       already uses --muted as a *text* colour, and silently repointing it
+       at a surface would recolour every `text-muted` in the app. The muted
+       *surface* role is served by --surface-hover / --surface-sunken. */
+    --muted-foreground: var(--muted);
+
+    /* shadcn "accent" slot, renamed to avoid the role-accent collision */
+    --surface-hover: #EFF2F7;
+    --surface-hover-fg: var(--ink);
+
+    --destructive: var(--danger);
+    --destructive-foreground: #FFFFFF;
+
+    --border: var(--line);
+    --input: var(--line);
+    --ring: var(--accent);
+}
+
 @layer base {
     body {
         @apply bg-surface text-slate-800 antialiased;
@@ -43,6 +117,26 @@
         outline: 2px solid var(--accent);
         outline-offset: 2px;
     }
+
+    /* Long-form content pages (login, landing) read better with real
+       optical line breaks; PMIS chrome is set separately. */
+    h1,
+    h2,
+    h3 {
+        text-wrap: balance;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+
+        *,
+        *::before,
+        *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+        }
+    }
 }
 
 @layer components {
@@ -50,21 +144,25 @@
     .tbi-table {
         @apply w-full text-sm text-left text-slate-600;
     }
+
     .tbi-table thead {
         @apply text-xs uppercase tracking-wide text-slate-500 bg-slate-50 border-y border-line;
     }
+
     .tbi-table th {
         @apply px-4 py-2.5 font-semibold;
     }
+
     .tbi-table td {
         @apply px-4 py-2.5 border-b border-line last:border-b-0;
     }
+
     .tbi-table tbody tr {
         @apply hover:bg-slate-50 transition-colors;
     }
 
     .tbi-input {
-        @apply w-full p-2 border border-line rounded text-sm bg-white
+        @apply w-full p-2 border border-line rounded bg-white text-sm
             placeholder:text-slate-400
             focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)];
     }
@@ -74,22 +172,48 @@
     }
 }
 
-/* Accent-aware utility classes */
-.accent-active {
-    color: var(--accent);
-}
-.accent-bg {
-    background-color: var(--accent);
-}
-.accent-hover:hover {
-    color: var(--accent);
-}
-.accent-border {
-    border-color: var(--accent);
-}
-.accent-ring:focus-visible {
-    outline-color: var(--accent);
-    box-shadow: 0 0 0 3px var(--accent-light);
+@layer utilities {
+    /* Accent-aware helpers. Prefer the Tailwind `accent` colour utilities
+       (bg-accent / text-accent / border-accent); these exist for the few
+       places that need the raw custom property. */
+    .accent-active {
+        color: var(--accent);
+    }
+
+    .accent-bg {
+        background-color: var(--accent);
+    }
+
+    .accent-hover:hover {
+        color: var(--accent);
+    }
+
+    .accent-border {
+        border-color: var(--accent);
+    }
+
+    .accent-ring:focus-visible {
+        outline-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-light);
+    }
+
+    /* Horizontal tab strips scroll on small screens without exposing the
+       native scrollbar chrome (which rendered as visible arrow buttons). */
+    .scrollbar-none {
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+
+    .scrollbar-none::-webkit-scrollbar {
+        display: none;
+    }
+
+    /* Fades the right edge of a scrollable strip so it is discoverable
+       without a scrollbar. */
+    .mask-fade-r {
+        -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
+        mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
+    }
 }
 
 /* Banner background. Defined here (not in tailwind.config.js) so Vite

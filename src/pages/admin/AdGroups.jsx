@@ -284,7 +284,7 @@ function AdGroups() {
           <>
             <button
               onClick={() => setIsPopupOpen(true)}
-              className="px-4 py-2 bg-primary-color text-white rounded text-sm font-medium hover:bg-primary-deep transition inline-flex items-center gap-1.5"
+              className="px-4 py-2 bg-accent text-white rounded text-sm font-medium transition-colors hover:brightness-110 inline-flex items-center gap-1.5"
             >
               <IoAddOutline className="text-lg" aria-hidden="true" />
               New startup
@@ -321,7 +321,7 @@ function AdGroups() {
           action={
             <button
               onClick={() => setIsPopupOpen(true)}
-              className="px-4 py-2 bg-primary-color text-white rounded text-sm font-medium hover:bg-primary-deep transition"
+              className="px-4 py-2 bg-accent text-white rounded text-sm font-medium transition-colors hover:brightness-110"
             >
               New startup
             </button>
@@ -459,7 +459,7 @@ function AdGroups() {
               </button>
               <button
                 onClick={handleCreateGroup}
-                className="px-4 py-2 bg-primary-color text-white rounded text-sm font-medium hover:bg-primary-deep transition"
+                className="px-4 py-2 bg-accent text-white rounded text-sm font-medium transition-colors hover:brightness-110"
               >
                 Create startup
               </button>
